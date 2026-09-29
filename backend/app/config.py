@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
+    # Offline demo: Tron serves a built-in synthetic scam scenario (no internet needed)
+    demo_mode: bool = False
+
     # Storage
     database_url: str = f"sqlite+aiosqlite:///{(BASE_DIR / 'data' / 'chaintrace.db').as_posix()}"
 

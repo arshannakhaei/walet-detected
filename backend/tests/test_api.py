@@ -208,3 +208,27 @@ def test_watchlist_and_alerts_api(client):
 def test_graph_png(client):
     resp = client.get(f"/api/graph/{WALLET}/image.png", params={"depth_in": 0, "depth_out": 1})
     assert resp.status_code == 200 and resp.content.startswith(b"\x89PNG")
+
+
+def test_demo_mode_story(tmp_path):
+    from app.providers import demo
+
+    settings = Settings(
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'demo.db'}",
+        demo_mode=True,
+        monitor_interval_seconds=0,
+        _env_file=None,
+    )
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://api.coingecko.com/api/v3/simple/price").mock(return_value=httpx.Response(200, json={}))
+        with TestClient(create_app(settings)) as c:
+            health = c.get("/api/health").json()
+            assert health["demo"]["scammer"] == demo.SCAMMER
+            risk = c.get(f"/api/wallet/{demo.SCAMMER}/risk").json()
+            assert {"pass_through", "fan_in"} <= {f["code"] for f in risk["findings"]}
+            mule_c = c.get(f"/api/wallet/{demo.MULES[2]}/risk").json()
+            assert "direct_exposure" in {f["code"] for f in mule_c["findings"]}  # paid an OFAC address
+            first_payment = c.get(f"/api/wallet/{demo.VICTIMS[0]}/transfers", params={"direction": "out"}).json()
+            tx = first_payment["items"][0]["transfer"]["tx_hash"]
+            trace = c.post("/api/trace", json={"address": demo.VICTIMS[0], "tx_hash": tx}).json()
+            assert Decimal(trace["summary"]["labeled"]) > 0  # reaches the exchange hot wallet

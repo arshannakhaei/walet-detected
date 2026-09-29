@@ -41,7 +41,13 @@ class TransfersResponse(BaseModel):
 
 @router.get("/health")
 async def health(request: Request) -> dict:
-    return {"status": "ok", "chains": request.app.state.providers.supported_chains}
+    settings = request.app.state.services.settings
+    demo = None
+    if settings.demo_mode:
+        from app.providers import demo as d
+
+        demo = {"scammer": d.SCAMMER, "victim": d.VICTIMS[0], "mule": d.MULES[0]}
+    return {"status": "ok", "chains": request.app.state.providers.supported_chains, "demo": demo}
 
 
 @router.get("/chains", response_model=list[ChainInfo])

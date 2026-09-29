@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@import "@fontsource/vazirmatn/400.css";
+@import "@fontsource/vazirmatn/500.css";
+@import "@fontsource/vazirmatn/700.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic tokens: components use these names, the values swap per theme. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --border: #e3e6eb;
+  --text: #0f172a;
+  --text-2: #475569;
+  --muted: #8a93a3;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6f0fc;
+
+  /* Data colors (validated categorical slots + reserved status colors) */
+  --series-in: #2a78d6;
+  --series-out: #eb6834;
+  --grid: #e1e0d9;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --violet: #4a3aa7;
+  --node: #64748b;
+}
+
+.dark {
+  --bg: #0b0f17;
+  --surface: #121824;
+  --surface-2: #1a2130;
+  --border: #263044;
+  --text: #f1f5f9;
+  --text-2: #b6c0cf;
+  --muted: #7d8799;
+  --accent: #3987e5;
+  --accent-ink: #ffffff;
+  --accent-soft: #16263d;
+
+  --series-in: #3987e5;
+  --series-out: #d95926;
+  --grid: #2c2c2a;
+  --violet: #9085e9;
+  --node: #8a96aa;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+  --font-sans: "Vazirmatn", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Addresses and hashes are always left-to-right, even inside RTL text. */
+.mono {
+  font-family: var(--font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Thin, unobtrusive scrollbars for tables and panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+}

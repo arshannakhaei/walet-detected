@@ -1,0 +1,18 @@
+// Persian titles for risk finding codes; English uses the server's own titles.
+export const FINDING_TITLES_FA: Record<string, string> = {
+  flagged_address: 'خود آدرس برچسب پرریسک دارد',
+  direct_exposure: 'تراکنش مستقیم با آدرس‌های پرریسک',
+  indirect_exposure: 'ارتباط غیرمستقیم (۲ لایه) با آدرس‌های پرریسک',
+  exchange_exposure: 'تراکنش با صرافی‌ها',
+  pass_through: 'ولت عبوری (Pass-through)',
+  rapid_movement: 'جابه‌جایی خیلی سریع پول',
+  short_lived_intermediary: 'ولت واسط کوتاه‌عمر',
+  fan_in: 'دریافت از تعداد زیادی فرستنده در زمان کوتاه',
+  fan_out: 'پخش پول به تعداد زیادی ولت در زمان کوتاه',
+  round_amounts: 'بیشتر مبالغ رُند',
+  structuring: 'مبالغ درست زیر ۱۰٬۰۰۰',
+  new_high_volume: 'ولت جدید با حجم بالا',
+  dormant_reactivated: 'فعال‌شدن دوباره‌ی ولت خاموش',
+  poisoning_victim: 'احتمال از دست دادن پول با Address Poisoning',
+  poisoning_target: 'هدف حمله‌ی Address Poisoning',
+}

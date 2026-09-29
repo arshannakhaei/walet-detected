@@ -6,4 +6,3 @@ venv/
 backend/data/*.db
 .pytest_cache/
 node_modules/
-frontend/dist/

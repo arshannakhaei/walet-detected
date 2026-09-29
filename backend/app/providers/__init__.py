@@ -51,6 +51,12 @@ class ProviderRegistry:
             else:
                 log.info("%s disabled: set ETHERSCAN_API_KEY to enable it", chain.value)
 
+        if settings.demo_mode:
+            from app.providers.demo import DemoProvider
+
+            self._providers[Chain.TRON] = DemoProvider()
+            log.warning("DEMO MODE: Tron data is synthetic")
+
     def get(self, chain: Chain) -> ChainProvider | None:
         return self._providers.get(chain)
 

@@ -127,3 +127,11 @@ async def test_bot_rejects_strangers_and_bad_input(env):
 def test_help_mentions_all_commands():
     for command in ("/wallet", "/graph", "/risk", "/trace", "/watch", "/unwatch", "/watchlist"):
         assert command in texts.HELP
+
+
+def test_bot_and_dashboard_share_finding_titles():
+    import re
+    from pathlib import Path
+
+    ts = (Path(__file__).resolve().parents[2] / "frontend/src/lib/findings.ts").read_text()
+    assert dict(re.findall(r"  (\w+): '([^']+)'", ts)) == texts.FINDING_FA

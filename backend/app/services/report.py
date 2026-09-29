@@ -162,7 +162,7 @@ def wallet_section(
                 evidence = "<br>".join(_mono(e) for e in f.evidence[:5])
                 parts.append(
                     f"<tr><td><span class='badge {f.severity.value}'>{f.severity.value}</span></td>"
-                    f"<td><b>{escape(f.title)}</b><br>{escape(f.detail)}<br>{evidence}</td></tr>"
+                    f"<td dir='auto'><b>{escape(f.title)}</b><br>{escape(f.detail)}<br>{evidence}</td></tr>"
                 )
             parts.append("</table>")
         else:

@@ -10,6 +10,8 @@
 
 شبکه‌ها: **Tron** (TRX, TRC20)، **Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche** (کوین اصلی، توکن‌ها، تراکنش‌های داخلی)، **Bitcoin**، **Solana** (SOL, SPL).
 
+📄 **گزارش کامل پروژه** (برنامه‌ریزی، راهنمای تصویری، معماری، تست‌ها و نقشه‌ی راه): [`docs/report.html`](docs/report.html) — در مرورگر باز کنید.
+
 ---
 
 ## اجرای سریع

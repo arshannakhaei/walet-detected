@@ -22,6 +22,25 @@ REASON_FA = {
     "loop": "حلقه",
 }
 
+# Persian titles per risk finding code (kept in sync with frontend/src/lib/findings.ts).
+FINDING_FA = {
+    "flagged_address": "خود آدرس برچسب پرریسک دارد",
+    "direct_exposure": "تراکنش مستقیم با آدرس‌های پرریسک",
+    "indirect_exposure": "ارتباط غیرمستقیم (۲ لایه) با آدرس‌های پرریسک",
+    "exchange_exposure": "تراکنش با صرافی‌ها",
+    "pass_through": "ولت عبوری (Pass-through)",
+    "rapid_movement": "جابه‌جایی خیلی سریع پول",
+    "short_lived_intermediary": "ولت واسط کوتاه‌عمر",
+    "fan_in": "دریافت از تعداد زیادی فرستنده در زمان کوتاه",
+    "fan_out": "پخش پول به تعداد زیادی ولت در زمان کوتاه",
+    "round_amounts": "بیشتر مبالغ رُند",
+    "structuring": "مبالغ درست زیر ۱۰٬۰۰۰",
+    "new_high_volume": "ولت جدید با حجم بالا",
+    "dormant_reactivated": "فعال‌شدن دوباره‌ی ولت خاموش",
+    "poisoning_victim": "احتمال از دست دادن پول با Address Poisoning",
+    "poisoning_target": "هدف حمله‌ی Address Poisoning",
+}
+
 HELP = (
     "<b>ChainTrace</b> — ردیابی تراکنش‌های کیف پول\n\n"
     "یک آدرس بفرستید، یا:\n"
@@ -71,7 +90,7 @@ def overview_text(
     if risk is not None:
         lines.append(f"\n{LEVEL_ICON.get(risk.level, '')} ریسک: <b>{risk.score}/100</b> ({risk.level})")
         for f in risk.findings[:4]:
-            lines.append(f"  • {escape(f.title)}")
+            lines.append(f"  • {escape(FINDING_FA.get(f.code, f.title))}")
 
     def cp_line(c: Counterparty, amount: Decimal) -> str:
         label = labels.get(o.chain, c.address)
@@ -101,7 +120,7 @@ def risk_text(r: RiskReport) -> str:
     if not r.findings:
         lines.append("موردی یافت نشد.")
     for f in r.findings:
-        lines.append(f"\n<b>[{f.severity.value}] {escape(f.title)}</b>\n{escape(f.detail)}")
+        lines.append(f"\n<b>[{f.severity.value}] {escape(FINDING_FA.get(f.code, f.title))}</b>\n{escape(f.detail)}")
         for e in f.evidence[:3]:
             lines.append(f"  {code(e)}")
     return "\n".join(lines)

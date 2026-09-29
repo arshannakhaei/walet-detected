@@ -1,0 +1,79 @@
+{
+  "_comment": "Known Ethereum addresses (lower-case). Same format as tron.json.",
+  "0x28c6c06298d514db089934071355e5743bf21d60": {
+    "name": "Binance 14",
+    "category": "exchange"
+  },
+  "0x21a31ee1afc51d94c2efccaa2092ad1028285549": {
+    "name": "Binance 15",
+    "category": "exchange"
+  },
+  "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": {
+    "name": "Binance 16",
+    "category": "exchange"
+  },
+  "0x56eddb7aa87536c09ccc2793473599fd21a8b17f": {
+    "name": "Binance 17",
+    "category": "exchange"
+  },
+  "0x9696f59e4d72e237be84ffd425dcad154bf96976": {
+    "name": "Binance 18",
+    "category": "exchange"
+  },
+  "0x71660c4005ba85c37ccec55d0c4493e66fe775d3": {
+    "name": "Coinbase 1",
+    "category": "exchange"
+  },
+  "0x503828976d22510aad0201ac7ec88293211d23da": {
+    "name": "Coinbase 2",
+    "category": "exchange"
+  },
+  "0xa9d1e08c7793af67e9d92fe308d5697fb81d3e43": {
+    "name": "Coinbase 10",
+    "category": "exchange"
+  },
+  "0x2910543af39aba0cd09dbb2d50200b3e800a63d2": {
+    "name": "Kraken 1",
+    "category": "exchange"
+  },
+  "0x742d35cc6634c0532925a3b844bc454e4438f44e": {
+    "name": "Bitfinex 2",
+    "category": "exchange"
+  },
+  "0x6cc5f688a315f3dc28a7781717a9a798a59fda7b": {
+    "name": "OKX",
+    "category": "exchange"
+  },
+  "0xd90e2f925da726b50c4ed8d0fb90ad053324f31b": {
+    "name": "Tornado Cash: Router",
+    "category": "mixer"
+  },
+  "0x722122df12d4e14e13ac3b6895a86e84145b6967": {
+    "name": "Tornado Cash: Proxy",
+    "category": "mixer"
+  },
+  "0x12d66f87a04a9e220743712ce6d9bb1b5616b8fc": {
+    "name": "Tornado Cash: 0.1 ETH",
+    "category": "mixer"
+  },
+  "0x47ce0c6ed5b0ce3d3a51fdb1c52dc66a7c3c2936": {
+    "name": "Tornado Cash: 1 ETH",
+    "category": "mixer"
+  },
+  "0x910cbd523d972eb0a6f4cae4618ad62622b39dbf": {
+    "name": "Tornado Cash: 10 ETH",
+    "category": "mixer"
+  },
+  "0xa160cdab225685da1d56aa342ad8841c3b53f291": {
+    "name": "Tornado Cash: 100 ETH",
+    "category": "mixer"
+  },
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+    "name": "Tether USD (USDT) contract",
+    "category": "token_contract"
+  },
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+    "name": "USD Coin (USDC) contract",
+    "category": "token_contract"
+  }
+}

@@ -8,12 +8,13 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
+from app.api import router
 from app.config import Settings, get_settings
 from app.db import Database
 from app.providers import ProviderRegistry
 from app.services.graph import GraphBuilder
 from app.services.labels import LabelService
+from app.services.pricing import PriceService
 from app.services.tracer import Tracer
 from app.services.wallet import WalletService
 
@@ -34,7 +35,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         providers = ProviderRegistry(settings, client)
         app.state.db = db
         app.state.providers = providers
-        wallets = WalletService(db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds)
+        prices = PriceService(client, settings.coingecko_base_url, settings.coingecko_api_key)
+        wallets = WalletService(
+            db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds, prices
+        )
         labels = LabelService(db)
         await labels.load()
         app.state.wallet_service = wallets

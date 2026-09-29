@@ -54,13 +54,15 @@ class Label(BaseModel):
 def load_builtin_labels(directory: Path = LABELS_DIR) -> dict[tuple[Chain, str], Label]:
     labels: dict[tuple[Chain, str], Label] = {}
     for path in sorted(directory.glob("*.json")):
+        # "<chain>.json" or "<chain>.<source>.json", e.g. "tron.ofac.json"
         try:
-            chain = Chain(path.stem)
+            chain = Chain(path.name.split(".", 1)[0])
         except ValueError:
             log.warning("ignoring label file for unknown chain: %s", path.name)
             continue
         for address, entry in json.loads(path.read_text(encoding="utf-8")).items():
-            if address.startswith("_"):
+            # Hand-curated "<chain>.json" sorts before "<chain>.<source>.json" and wins.
+            if address.startswith("_") or (chain, address) in labels:
                 continue
             labels[(chain, address)] = Label(
                 chain=chain,

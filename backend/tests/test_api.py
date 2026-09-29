@@ -33,6 +33,9 @@ def mock_tron(trc20_items, trx_items):
                 json={"data": [{"balance": 40_000_000, "trc20": [{USDT: "50000000"}]}]},
             )
         )
+        router.get("https://api.coingecko.com/api/v3/simple/price").mock(
+            return_value=httpx.Response(200, json={"tron": {"usd": 0.25}})
+        )
         yield trc20_route
 
 
@@ -52,7 +55,7 @@ def test_health(client):
 
 
 def test_detect(client):
-    assert client.get(f"/api/detect/{WALLET}").json()["chains"] == ["tron"]
+    assert client.get(f"/api/detect/{WALLET}").json()["chains"] == [{"chain": "tron", "supported": True}]
 
 
 def test_overview(client):
@@ -63,6 +66,7 @@ def test_overview(client):
     assert data["truncated"] is False
     balances = {b["token_symbol"]: Decimal(b["amount"]) for b in data["balances"]}
     assert balances == {"TRX": Decimal("40"), "USDT": Decimal("50")}
+    assert Decimal(data["total_usd"]) == Decimal("60")  # 40 TRX * 0.25 + 50 USDT
     usdt = next(f for f in data["flows"] if f["token_symbol"] == "USDT")
     assert Decimal(usdt["total_in"]) == 1500 and Decimal(usdt["total_out"]) == 1450
     trx = next(f for f in data["flows"] if f["token_symbol"] == "TRX")
@@ -109,7 +113,9 @@ def test_cache_prevents_refetch(client, mock_tron):
 def test_invalid_address(client):
     assert client.get("/api/wallet/nope/overview").status_code == 400
     evm = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
-    assert client.get(f"/api/wallet/{evm}/overview").status_code == 501
+    # BSC needs an Etherscan key (no public Blockscout), and none is configured.
+    assert client.get(f"/api/wallet/{evm}/overview", params={"chain": "bsc"}).status_code == 501
+    assert client.get(f"/api/wallet/{WALLET}/overview", params={"chain": "ethereum"}).status_code == 400
 
 
 def test_trace_endpoint(client):

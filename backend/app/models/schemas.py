@@ -59,6 +59,9 @@ class TokenBalance(BaseModel):
     token_symbol: str
     token_contract: str | None = None
     amount: Decimal
+    usd_value: Decimal | None = None
+    # True when computed from transfer history (in - out) rather than read from the chain.
+    derived: bool = False
 
 
 class TokenFlow(BaseModel):
@@ -68,12 +71,15 @@ class TokenFlow(BaseModel):
     total_out: Decimal = Decimal(0)
     count_in: int = 0
     count_out: int = 0
+    usd_in: Decimal | None = None  # at today's price
+    usd_out: Decimal | None = None
 
 
 class WalletOverview(BaseModel):
     chain: Chain
     address: str
     balances: list[TokenBalance]
+    total_usd: Decimal | None = None
     first_seen: datetime | None
     last_seen: datetime | None
     transfer_count: int

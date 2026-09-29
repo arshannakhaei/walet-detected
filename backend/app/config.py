@@ -28,6 +28,26 @@ class Settings(BaseSettings):
     trongrid_api_key: str = ""  # optional; raises rate limits when set
     tron_requests_per_second: float = 3.0
 
+    # EVM chains. With a (free) Etherscan key, Etherscan V2 serves all EVM
+    # chains; without one, Blockscout is used where a public instance exists.
+    etherscan_api_key: str = ""
+    etherscan_base_url: str = "https://api.etherscan.io/v2/api"
+    evm_requests_per_second: float = 4.0
+
+    # Bitcoin (Esplora API: mempool.space or blockstream.info/api)
+    bitcoin_api_url: str = "https://mempool.space/api"
+    bitcoin_requests_per_second: float = 2.0
+
+    # Solana JSON-RPC (a free Helius / QuickNode URL is much faster than the public one)
+    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    solana_requests_per_second: float = 4.0
+    # Solana needs one request per transaction, so it has its own lower cap.
+    solana_max_transactions: int = 300
+
+    # Prices
+    coingecko_base_url: str = "https://api.coingecko.com/api/v3"
+    coingecko_api_key: str = ""
+
     # Fetch limits
     max_transfers_per_address: int = 2000
     page_size: int = 200

@@ -1,5 +1,46 @@
 {
   "_comment": "Known Tron addresses. Add entries as \"address\": {\"name\": ..., \"category\": ...}. Categories: exchange, bridge, mixer, defi, token_contract, sanctioned, scam, service, personal, other.",
-  "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t": {"name": "Tether USD (USDT) contract", "category": "token_contract"},
-  "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8": {"name": "USD Coin (USDC) contract", "category": "token_contract"}
+  "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t": {
+    "name": "Tether USD (USDT) contract",
+    "category": "token_contract"
+  },
+  "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8": {
+    "name": "USD Coin (USDC) contract",
+    "category": "token_contract"
+  },
+  "TV6MuMXfmLbBqPZvBHdwFsDnQeVfnmiuSi": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TJDENsfBJs4RFETt1X1W8wMDc8M5XnJhCe": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TT1DyeqXaaJkt6UhVYFWUXBXknaXnBudTK": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TYASr5UV6HEcXatwdFQfmLVUqQQQMUxHLS": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9": {
+    "name": "Exchange hot wallet (likely Binance)",
+    "category": "exchange",
+    "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  }
 }

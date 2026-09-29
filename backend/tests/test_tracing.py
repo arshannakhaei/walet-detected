@@ -62,6 +62,9 @@ SCENARIO = [
 
 
 class FakeProvider:
+    history_cap = None
+    reports_token_balances = True
+
     def __init__(self, transfers: list[Transfer], hubs: set[str] = frozenset()):
         self.transfers = transfers
         self.hubs = hubs

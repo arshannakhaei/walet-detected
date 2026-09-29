@@ -86,3 +86,11 @@ def detect_chains(address: str) -> list[Chain]:
     if _SOLANA_RE.match(address):
         return [Chain.SOLANA]
     return []
+
+
+def normalize_address(chain: Chain, address: str) -> str:
+    """Canonical form used as the storage key: EVM addresses are case-insensitive."""
+    address = address.strip()
+    if chain in EVM_CHAINS:
+        return address.lower()
+    return address

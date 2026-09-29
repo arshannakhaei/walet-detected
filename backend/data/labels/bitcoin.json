@@ -1,0 +1,11 @@
+{
+  "_comment": "Known Bitcoin addresses. Same format as tron.json.",
+  "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo": {
+    "name": "Binance cold wallet",
+    "category": "exchange"
+  },
+  "3D2oetdNuZUqQHPJmcMDDHYoqkyNVsFk9r": {
+    "name": "Bitfinex cold wallet",
+    "category": "exchange"
+  }
+}

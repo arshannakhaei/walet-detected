@@ -15,6 +15,8 @@ from app.models import (
     WalletOverview,
 )
 from app.providers import ProviderRegistry
+from app.services.pricing import PriceService
+from app.services.tokens import is_spam
 
 
 class UnsupportedChainError(Exception):
@@ -31,9 +33,12 @@ class TransferFilter:
     end: datetime | None = None
     counterparty: str | None = None
     include_failed: bool = False
+    hide_spam: bool = True  # zero-value and look-alike token transfers
 
     def matches(self, t: Transfer, address: str) -> bool:
         if not self.include_failed and not t.success:
+            return False
+        if self.hide_spam and is_spam(t):
             return False
         if self.token and self.token.upper() != t.token_symbol.upper() and self.token != t.token_contract:
             return False
@@ -53,8 +58,16 @@ class TransferFilter:
 
 
 class WalletService:
-    def __init__(self, db: Database, providers: ProviderRegistry, max_transfers: int, cache_ttl: int):
+    def __init__(
+        self,
+        db: Database,
+        providers: ProviderRegistry,
+        max_transfers: int,
+        cache_ttl: int,
+        prices: PriceService | None = None,
+    ):
         self._db = db
+        self._prices = prices
         self._providers = providers
         self._max_transfers = max_transfers
         self._cache_ttl = cache_ttl
@@ -75,6 +88,8 @@ class WalletService:
         """
         provider = self._provider(chain)
         limit = limit or self._max_transfers
+        if provider.history_cap:
+            limit = min(limit, provider.history_cap)
         sync = await self._db.get_sync(chain, address)
         stale = sync is None or refresh
         if sync is not None and not stale:
@@ -113,12 +128,15 @@ class WalletService:
 
     async def overview(self, chain: Chain, address: str) -> WalletOverview:
         transfers, truncated = await self.load_transfers(chain, address)
-        balances = await self._provider(chain).get_balances(address)
+        provider = self._provider(chain)
+        balances = await provider.get_balances(address)
 
-        ok = [t for t in transfers if t.success]
+        clean = TransferFilter()
         flows: dict[tuple[str, str | None], TokenFlow] = {}
         counterparties: set[str] = set()
-        for t in ok:
+        for t in transfers:
+            if not clean.matches(t, address):
+                continue
             key = (t.token_symbol, t.token_contract)
             flow = flows.setdefault(key, TokenFlow(token_symbol=t.token_symbol, token_contract=t.token_contract))
             direction = t.direction_for(address)
@@ -131,10 +149,36 @@ class WalletService:
             counterparties.add(t.counterparty_for(address))
         counterparties.discard(address)
 
+        # Chains whose balance call covers only the native coin: derive token
+        # balances from a complete history.
+        if not truncated and not provider.reports_token_balances:
+            have = {(b.token_symbol, b.token_contract) for b in balances}
+            for (symbol, contract), flow in flows.items():
+                if contract is None or (symbol, contract) in have:
+                    continue
+                amount = flow.total_in - flow.total_out
+                if amount > 0:
+                    balances.append(
+                        TokenBalance(token_symbol=symbol, token_contract=contract, amount=amount, derived=True)
+                    )
+
+        total_usd: Decimal | None = None
+        if self._prices is not None:
+            for b in balances:
+                price = await self._prices.price(chain, b.token_symbol, b.token_contract)
+                if price is not None:
+                    b.usd_value = b.amount * price
+                    total_usd = (total_usd or Decimal(0)) + b.usd_value
+            for f in flows.values():
+                price = await self._prices.price(chain, f.token_symbol, f.token_contract)
+                if price is not None:
+                    f.usd_in, f.usd_out = f.total_in * price, f.total_out * price
+
         return WalletOverview(
             chain=chain,
             address=address,
             balances=balances,
+            total_usd=total_usd,
             first_seen=min((t.timestamp for t in transfers), default=None),
             last_seen=max((t.timestamp for t in transfers), default=None),
             transfer_count=len(transfers),

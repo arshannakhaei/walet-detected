@@ -6,6 +6,7 @@ chain with one key. Without a key, chains that have a public Blockscout
 instance (same API shape, no key needed) use that instead.
 """
 
+import asyncio
 import logging
 from collections import Counter
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ from decimal import Decimal
 import httpx
 
 from app.models import Chain, TokenBalance, Transfer
-from app.providers.base import ChainProvider, ProviderError, TransferPage
+from app.providers.base import ChainProvider, ProviderError, RateLimitError, TransferPage
 from app.providers.ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -157,33 +158,50 @@ class EvmProvider(ChainProvider):
             params["chainid"] = self._chain_id
         if self._api_key:
             params["apikey"] = self._api_key
-        data = await self._get_json(self._base, params=params)
-        status = str(data.get("status", "1"))
-        result = data.get("result")
-        if status == "1":
-            return result
-        message = str(data.get("message", ""))
-        if "no transactions found" in message.lower() or "no records found" in message.lower() or result == []:
-            return []
-        raise ProviderError(f"{self.chain.value}: {message}: {result}")
+        for attempt in range(len(self.retry_delays) + 1):
+            data = await self._get_json(self._base, params=params)
+            status = str(data.get("status", "1"))
+            result = data.get("result")
+            if status == "1":
+                return result
+            message = str(data.get("message", ""))
+            if "no transactions found" in message.lower() or "no records found" in message.lower() or result == []:
+                return []
+            # Etherscan reports its rate limit inside a normal 200 response.
+            if "rate limit" in f"{message} {result}".lower() and attempt < len(self.retry_delays):
+                await asyncio.sleep(self.retry_delays[attempt])
+                continue
+            if "rate limit" in f"{message} {result}".lower():
+                raise RateLimitError(
+                    f"{self.chain.value}: rate limit of the free API reached. "
+                    "Wait a minute, or add a free Etherscan API key in Settings."
+                )
+            raise ProviderError(f"{self.chain.value}: {message}: {result}")
+        raise ProviderError(f"{self.chain.value}: no answer")  # pragma: no cover
 
     async def _list(self, action: str, address: str, max_items: int) -> tuple[list[dict], bool]:
         items: list[dict] = []
         offset = min(self._page_size, max_items, MAX_RESULT_WINDOW)
         page = 1
         while True:
-            batch = await self._call(
-                {
-                    "module": "account",
-                    "action": action,
-                    "address": address,
-                    "startblock": 0,
-                    "endblock": 99_999_999,
-                    "page": page,
-                    "offset": offset,
+            try:
+                batch = await self._call(
+                    {
+                        "module": "account",
+                        "action": action,
+                        "address": address,
+                        "startblock": 0,
+                        "endblock": 99_999_999,
+                        "page": page,
+                        "offset": offset,
                     "sort": "desc",
-                }
-            )
+                    }
+                )
+            except ProviderError:
+                if not items:
+                    raise
+                log.warning("%s %s: stopped after %d items: API refused more", self.chain.value, action, len(items))
+                return items, True  # keep what we have; the page shows it as incomplete
             items.extend(batch)
             if len(batch) < offset:
                 return items, False
@@ -194,7 +212,12 @@ class EvmProvider(ChainProvider):
     async def get_transfers(self, address: str, max_items: int) -> TransferPage:
         address = address.lower()
         native, more_native = await self._list("txlist", address, max_items)
-        tokens, more_tokens = await self._list("tokentx", address, max_items)
+        try:
+            tokens, more_tokens = await self._list("tokentx", address, max_items)
+        except RateLimitError:
+            if not native:
+                raise
+            tokens, more_tokens = [], True  # show native transfers rather than nothing
         try:
             internal, more_internal = await self._list("txlistinternal", address, max_items)
         except ProviderError as exc:  # not every explorer supports internal txs

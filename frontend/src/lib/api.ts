@@ -347,7 +347,29 @@ export interface Health {
   demo: { scammer: string; victim: string; mule: string } | null
 }
 
+export interface KeyStatus {
+  trongrid_api_key: boolean
+  etherscan_api_key: boolean
+  coingecko_api_key: boolean
+  solana_rpc_url: string
+  demo_mode: boolean
+  tron_requests_per_second: number
+  evm_requests_per_second: number
+  can_edit: boolean
+}
+
+export interface KeysIn {
+  trongrid_api_key?: string
+  etherscan_api_key?: string
+  coingecko_api_key?: string
+  solana_rpc_url?: string
+}
+
+export const isRateLimit = (e: unknown) => e instanceof Error && /rate limit|HTTP 429/i.test(e.message)
+
 export const api = {
+  settings: () => get<KeyStatus>('/api/settings'),
+  saveKeys: (body: KeysIn) => request<KeyStatus>('PUT', '/api/settings/keys', body),
   health: () => get<Health>('/api/health'),
   chains: () => get<ChainInfo[]>('/api/chains'),
   detect: (address: string) => get<{ address: string; chains: ChainInfo[] }>(`/api/detect/${enc(address)}`),

@@ -28,6 +28,7 @@ export function WalletPage() {
   const [labelOpen, setLabelOpen] = useState(false)
   const [caseOpen, setCaseOpen] = useState(false)
   const labels = useLabelMap(chain)
+  const keys = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 })
 
   const overview = useQuery({ queryKey: ['overview', chain, address], queryFn: () => api.overview(address, chain) })
   // The canonical form (e.g. lower-case EVM) as returned by the API.
@@ -100,7 +101,18 @@ export function WalletPage() {
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
-      {overview.isPending && <Spinner label={t('loading_chain')} />}
+      {overview.isPending && (
+        <Spinner
+          label={
+            <span className="flex flex-col items-center gap-1 text-center">
+              {t('loading_chain')}
+              {chain === 'tron' && keys.data && !keys.data.trongrid_api_key && !keys.data.demo_mode && (
+                <span className="text-xs text-muted">{t('slow_without_key')}</span>
+              )}
+            </span>
+          }
+        />
+      )}
       {overview.isError && <ErrorBox error={overview.error} onRetry={() => overview.refetch()} />}
       {overview.data && (
         <>

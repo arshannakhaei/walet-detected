@@ -1,5 +1,6 @@
 """Wallet analysis: cached transfer history, overview stats and counterparties."""
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -71,6 +72,9 @@ class WalletService:
         self._providers = providers
         self._max_transfers = max_transfers
         self._cache_ttl = cache_ttl
+        # One download per address at a time: the overview, risk and graph views
+        # often ask for the same wallet at once.
+        self._locks: dict[tuple[Chain, str], asyncio.Lock] = {}
 
     def _provider(self, chain: Chain):
         provider = self._providers.get(chain)
@@ -86,6 +90,13 @@ class WalletService:
         `limit` caps how many transfers are downloaded (default: the configured
         maximum). A wallet with more history than that comes back truncated.
         """
+        lock = self._locks.setdefault((chain, address), asyncio.Lock())
+        async with lock:
+            return await self._load_transfers(chain, address, refresh, limit)
+
+    async def _load_transfers(
+        self, chain: Chain, address: str, refresh: bool, limit: int | None
+    ) -> tuple[list[Transfer], bool]:
         provider = self._provider(chain)
         limit = limit or self._max_transfers
         if provider.history_cap:

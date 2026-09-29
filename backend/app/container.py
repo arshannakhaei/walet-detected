@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from app.config import Settings
+from app.config import ENV_FILE, Settings
 from app.db import Database
 from app.providers import ProviderRegistry
 from app.services.cases import CaseService
@@ -32,6 +32,7 @@ class Services:
     risk: RiskAnalyzer
     cases: CaseService
     monitor: MonitorService
+    env_file: Path = ENV_FILE
 
     async def close(self) -> None:
         await self.monitor.stop()

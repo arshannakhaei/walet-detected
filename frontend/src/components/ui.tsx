@@ -1,5 +1,7 @@
 import clsx from 'clsx'
-import { AlertTriangle, Inbox, Loader2, X } from 'lucide-react'
+import { AlertTriangle, Gauge, Inbox, KeyRound, Loader2, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { isRateLimit } from '../lib/api'
 import {
   useEffect,
   type ButtonHTMLAttributes,
@@ -143,6 +145,33 @@ export function Spinner({ label }: { label?: ReactNode }) {
 export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const { t } = useI18n()
   const message = error instanceof Error ? error.message : String(error)
+  if (isRateLimit(error)) {
+    return (
+      <div className="flex flex-col gap-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm">
+        <div className="flex items-start gap-3">
+          <Gauge className="mt-0.5 size-5 shrink-0" />
+          <div className="flex-1">
+            <b>{t('rate_limited_title')}</b>
+            <p className="mt-1 text-ink-2">{t('rate_limited_body')}</p>
+            <p className="mono mt-1 text-xs text-muted">{message}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/settings">
+            <Button size="sm" variant="primary" tabIndex={-1}>
+              <KeyRound className="size-3.5" />
+              {t('add_key_now')}
+            </Button>
+          </Link>
+          {onRetry && (
+            <Button size="sm" onClick={onRetry}>
+              {t('retry')}
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border border-critical/40 bg-critical/5 p-4 text-sm sm:flex-row sm:items-center">
       <AlertTriangle className="size-5 shrink-0 text-critical" />

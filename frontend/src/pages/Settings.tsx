@@ -1,5 +1,6 @@
 import { CheckCircle2, ExternalLink, XCircle } from 'lucide-react'
 import { CopyButton } from '../components/Address'
+import { ApiKeysCard } from '../components/ApiKeysCard'
 import { Card, Segmented, Spinner } from '../components/ui'
 import { CHAINS } from '../lib/chains'
 import { useChains } from '../lib/hooks'
@@ -43,6 +44,8 @@ export function Settings() {
         </div>
       </Card>
 
+      <ApiKeysCard />
+
       <Card title={t('chains_status')}>
         {chains.isPending ? (
           <Spinner />
@@ -81,7 +84,7 @@ export function Settings() {
         <p className="mb-3 text-sm text-ink-2">{t('mcp_help')}</p>
         <div className="relative">
           <pre className="mono scroll-thin overflow-x-auto rounded-lg bg-surface-2 p-3 text-xs">{MCP_CONFIG}</pre>
-          <CopyButton text={MCP_CONFIG} className="absolute top-2 end-2" />
+          <CopyButton text={MCP_CONFIG} className="absolute top-2 right-2" />
         </div>
       </Card>
     </div>

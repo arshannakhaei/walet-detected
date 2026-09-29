@@ -39,6 +39,10 @@ class PriceService:
         self._prices: dict[str, Decimal] = {}
         self._fetched_at = 0.0
 
+    def set_api_key(self, api_key: str) -> None:
+        self._headers = {"x-cg-demo-api-key": api_key} if api_key else {}
+        self._fetched_at = 0.0
+
     async def _refresh(self) -> None:
         if time.monotonic() - self._fetched_at < self._ttl and self._prices:
             return

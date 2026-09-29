@@ -18,7 +18,7 @@ from decimal import Decimal
 import httpx
 
 from app.models import Chain, TokenBalance, Transfer
-from app.providers.base import ChainProvider, TransferPage
+from app.providers.base import ChainProvider, ProviderError, TransferPage
 from app.providers.ratelimit import RateLimiter
 
 SATS = Decimal(100_000_000)
@@ -85,7 +85,13 @@ class BitcoinProvider(ChainProvider):
         truncated = False
         while True:
             path = f"/address/{address}/txs/chain" + (f"/{last_seen}" if last_seen else "")
-            batch = await self._get_json(f"{self._base}{path}")
+            try:
+                batch = await self._get_json(f"{self._base}{path}")
+            except ProviderError:
+                if not confirmed:
+                    raise
+                truncated = True  # keep what we have; the page shows it as incomplete
+                break
             confirmed.extend(batch)
             if len(batch) < PAGE:
                 break

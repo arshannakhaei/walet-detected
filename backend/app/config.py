@@ -29,17 +29,21 @@ class Settings(BaseSettings):
     # Tron
     trongrid_base_url: str = "https://api.trongrid.io"
     trongrid_api_key: str = ""  # optional; raises rate limits when set
-    tron_requests_per_second: float = 3.0
+    # None = automatic: TronGrid allows 1 request/s without a key and ~15/s with one.
+    tron_requests_per_second: float | None = None
 
     # EVM chains. With a (free) Etherscan key, Etherscan V2 serves all EVM
     # chains; without one, Blockscout is used where a public instance exists.
     etherscan_api_key: str = ""
     etherscan_base_url: str = "https://api.etherscan.io/v2/api"
-    evm_requests_per_second: float = 4.0
+    # None = automatic: 4/s with an Etherscan key (limit 5), 3/s on shared Blockscout.
+    evm_requests_per_second: float | None = None
 
     # Bitcoin (Esplora API: mempool.space or blockstream.info/api)
     bitcoin_api_url: str = "https://mempool.space/api"
     bitcoin_requests_per_second: float = 2.0
+    # Esplora returns 25 transactions per request; keep busy addresses fast.
+    bitcoin_max_transactions: int = 300
 
     # Solana JSON-RPC (a free Helius / QuickNode URL is much faster than the public one)
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
@@ -52,11 +56,11 @@ class Settings(BaseSettings):
     coingecko_api_key: str = ""
 
     # Fetch limits
-    max_transfers_per_address: int = 2000
+    max_transfers_per_address: int = 1000
     page_size: int = 200
     # While building graphs and traces, an address with more transfers than
     # this is treated as a hub (exchange, service) and not expanded further.
-    hub_threshold: int = 1000
+    hub_threshold: int = 500
     # Re-fetch an address from the chain when its cached data is older than this.
     cache_ttl_seconds: int = 300
 
@@ -72,6 +76,18 @@ class Settings(BaseSettings):
     public_url: str = ""
 
     @property
+    def tron_rate(self) -> float:
+        if self.tron_requests_per_second is not None:
+            return self.tron_requests_per_second
+        return 12.0 if self.trongrid_api_key else 0.9
+
+    @property
+    def evm_rate(self) -> float:
+        if self.evm_requests_per_second is not None:
+            return self.evm_requests_per_second
+        return 4.0 if self.etherscan_api_key else 3.0
+
+    @property
     def telegram_user_ids(self) -> set[int]:
         return {int(x) for x in self.telegram_allowed_users.replace(" ", "").split(",") if x}
 
@@ -79,3 +95,21 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+ENV_FILE = PROJECT_ROOT / ".env"
+
+
+def update_env_file(updates: dict[str, str], path: Path = ENV_FILE) -> None:
+    """Set KEY=value lines in .env, keeping every other line (and comments) as they are."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    pending = {k.upper(): v for k, v in updates.items()}
+    out = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip().upper() if "=" in line and not line.lstrip().startswith("#") else None
+        if key in pending:
+            out.append(f"{key}={pending.pop(key)}")
+        else:
+            out.append(line)
+    out.extend(f"{k}={v}" for k, v in pending.items())
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")

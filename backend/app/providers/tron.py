@@ -8,7 +8,7 @@ from decimal import Decimal
 import httpx
 
 from app.models import Chain, TokenBalance, Transfer
-from app.providers.base import ChainProvider, TransferPage
+from app.providers.base import ChainProvider, ProviderError, TransferPage
 from app.providers.ratelimit import RateLimiter
 from app.services.addresses import tron_hex_to_base58
 
@@ -95,6 +95,8 @@ def parse_trx_transfers(items: list[dict]) -> list[Transfer]:
 
 class TronProvider(ChainProvider):
     chain = Chain.TRON
+    # TronGrid answers 403 during the 30-second block that follows too many requests.
+    rate_limit_statuses = frozenset({403})
 
     def __init__(
         self,
@@ -115,7 +117,13 @@ class TronProvider(ChainProvider):
         items: list[dict] = []
         params = {**params, "limit": self._page_size, "only_confirmed": "true"}
         while True:
-            data = await self._get_json(f"{self._base}{path}", params=params, headers=self._headers)
+            try:
+                data = await self._get_json(f"{self._base}{path}", params=params, headers=self._headers)
+            except ProviderError:
+                if not items:
+                    raise
+                log.warning("tron %s: stopped after %d items: API refused more", path, len(items))
+                return items, True  # keep what we have; the page shows it as incomplete
             items.extend(data.get("data") or [])
             fingerprint = (data.get("meta") or {}).get("fingerprint")
             if not fingerprint:
@@ -128,9 +136,12 @@ class TronProvider(ChainProvider):
         trc20_raw, trc20_more = await self._paginate(
             f"/v1/accounts/{address}/transactions/trc20", {}, max_items
         )
-        trx_raw, trx_more = await self._paginate(
-            f"/v1/accounts/{address}/transactions", {}, max_items
-        )
+        try:
+            trx_raw, trx_more = await self._paginate(f"/v1/accounts/{address}/transactions", {}, max_items)
+        except ProviderError:
+            if not trc20_raw:
+                raise
+            trx_raw, trx_more = [], True  # show the token transfers rather than nothing
         transfers = parse_trc20_transfers(trc20_raw) + parse_trx_transfers(trx_raw)
         for t in transfers:
             if t.token_contract:

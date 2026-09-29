@@ -110,7 +110,7 @@ export function TransfersTab({
                     </td>
                     <td className={td}>
                       <Link
-                        to={`/trace?chain=${chain}&address=${encodeURIComponent(address)}&tx=${encodeURIComponent(tr.tx_hash)}&token=${encodeURIComponent(tr.token_contract ?? tr.token_symbol)}&direction=${direction === 'in' ? 'forward' : 'backward'}`}
+                        to={`/trace?chain=${chain}&address=${encodeURIComponent(address)}&tx=${encodeURIComponent(tr.tx_hash)}&token=${encodeURIComponent(tr.token_contract ?? tr.token_symbol)}&direction=forward`}
                         className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent hover:bg-accent-soft"
                       >
                         <Route className="size-3.5" />

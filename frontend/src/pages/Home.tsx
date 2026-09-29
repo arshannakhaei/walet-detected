@@ -9,7 +9,7 @@ import { api, type Chain } from '../lib/api'
 import { CHAINS } from '../lib/chains'
 import { fmtDate, shortAddr } from '../lib/format'
 import { useI18n } from '../lib/i18n'
-import { clearRecent, recentSearches } from '../lib/search'
+import { clearRecent, recentSearches, resolveSearch } from '../lib/search'
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value)
@@ -76,9 +76,12 @@ export function Home() {
       </div>
 
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-          go(target)
+          if (target && typed === value.trim()) return go(target)
+          // Submitted before detection finished (e.g. paste + Enter): resolve now.
+          const route = await resolveSearch(value)
+          if (route) navigate(route)
         }}
         className="flex flex-col gap-3"
       >
@@ -87,6 +90,7 @@ export function Home() {
             <Search className="pointer-events-none absolute top-1/2 size-5 -translate-y-1/2 text-muted start-3" />
             <input
               autoFocus
+              aria-label={t('search_placeholder')}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={t('search_placeholder')}
@@ -94,7 +98,7 @@ export function Home() {
               className="mono h-12 w-full rounded-xl border border-line bg-surface text-sm text-ink shadow-sm placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none ps-11 pe-3"
             />
           </div>
-          <Button type="submit" variant="primary" className="h-12 px-6" disabled={!target}>
+          <Button type="submit" variant="primary" className="h-12 px-6" disabled={value.trim().length < 20}>
             {t('search_button')}
           </Button>
         </div>

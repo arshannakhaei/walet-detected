@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "chaintrace": {
+      "command": "C:\\path\\to\\walet-detected\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\walet-detected\\mcp_server.py"]
+    }
+  }
+}

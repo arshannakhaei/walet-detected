@@ -1,0 +1,68 @@
+"""Builds every service once, for the web app, the MCP server and scripts alike."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import httpx
+
+from app.config import Settings
+from app.db import Database
+from app.providers import ProviderRegistry
+from app.services.cases import CaseService
+from app.services.graph import GraphBuilder
+from app.services.labels import LabelService
+from app.services.monitor import MonitorService
+from app.services.pricing import PriceService
+from app.services.risk import RiskAnalyzer
+from app.services.tracer import Tracer
+from app.services.wallet import WalletService
+
+
+@dataclass
+class Services:
+    settings: Settings
+    db: Database
+    client: httpx.AsyncClient
+    providers: ProviderRegistry
+    prices: PriceService
+    wallets: WalletService
+    labels: LabelService
+    graphs: GraphBuilder
+    tracer: Tracer
+    risk: RiskAnalyzer
+    cases: CaseService
+    monitor: MonitorService
+
+    async def close(self) -> None:
+        await self.monitor.stop()
+        await self.client.aclose()
+        await self.db.close()
+
+
+async def create_services(settings: Settings) -> Services:
+    if settings.database_url.startswith("sqlite"):
+        db_path = settings.database_url.split(":///", 1)[-1]
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    db = Database(settings.database_url)
+    await db.init()
+    client = httpx.AsyncClient(timeout=settings.http_timeout_seconds)
+    providers = ProviderRegistry(settings, client)
+    prices = PriceService(client, settings.coingecko_base_url, settings.coingecko_api_key)
+    wallets = WalletService(db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds, prices)
+    labels = LabelService(db)
+    await labels.load()
+    graphs = GraphBuilder(wallets, labels, settings.hub_threshold)
+    return Services(
+        settings=settings,
+        db=db,
+        client=client,
+        providers=providers,
+        prices=prices,
+        wallets=wallets,
+        labels=labels,
+        graphs=graphs,
+        tracer=Tracer(wallets, labels, settings.hub_threshold),
+        risk=RiskAnalyzer(wallets, labels, graphs),
+        cases=CaseService(db),
+        monitor=MonitorService(db, wallets, poll_limit=settings.page_size),
+    )

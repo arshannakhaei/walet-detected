@@ -1,0 +1,11 @@
+services:
+  chaintrace:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./backend/data:/app/backend/data   # database and label lists survive rebuilds
+    restart: unless-stopped

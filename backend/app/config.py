@@ -59,6 +59,19 @@ class Settings(BaseSettings):
 
     http_timeout_seconds: float = 20.0
 
+    # Watchlist polling (seconds between checks; 0 disables the background monitor)
+    monitor_interval_seconds: int = 120
+
+    # Telegram bot: token from @BotFather; comma-separated user ids allowed to use it
+    telegram_bot_token: str = ""
+    telegram_allowed_users: str = ""
+    # Address the dashboard is reachable at, used for links in bot messages
+    public_url: str = ""
+
+    @property
+    def telegram_user_ids(self) -> set[int]:
+        return {int(x) for x in self.telegram_allowed_users.replace(" ", "").split(",") if x}
+
 
 @lru_cache
 def get_settings() -> Settings:

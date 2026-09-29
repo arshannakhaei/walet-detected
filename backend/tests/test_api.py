@@ -44,6 +44,7 @@ def client(tmp_path, mock_tron):
     settings = Settings(
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         tron_requests_per_second=0,
+        monitor_interval_seconds=0,
         _env_file=None,
     )
     with TestClient(create_app(settings)) as c:
@@ -191,3 +192,19 @@ def test_cases_flow(client):
     assert client.delete(f"/api/cases/{cid}/items/{item['id']}").status_code == 204
     assert client.delete(f"/api/cases/{cid}").status_code == 204
     assert client.get(f"/api/cases/{cid}").status_code == 404
+
+
+def test_watchlist_and_alerts_api(client):
+    watch = client.post("/api/watchlist", json={"address": WALLET, "name": "w", "min_amount": "5"}).json()
+    assert watch["chain"] == "tron" and watch["name"] == "w"
+    assert len(client.get("/api/watchlist").json()) == 1
+    assert client.post("/api/watchlist/check").json() == []  # nothing new since it was added
+    assert client.get("/api/alerts").json() == []
+    assert client.post("/api/alerts/read", json={}).status_code == 204
+    assert client.delete(f"/api/watchlist/{watch['id']}").status_code == 204
+    assert client.delete(f"/api/watchlist/{watch['id']}").status_code == 404
+
+
+def test_graph_png(client):
+    resp = client.get(f"/api/graph/{WALLET}/image.png", params={"depth_in": 0, "depth_out": 1})
+    assert resp.status_code == 200 and resp.content.startswith(b"\x89PNG")

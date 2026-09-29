@@ -6,3 +6,5 @@ pydantic-settings>=2.2
 sqlalchemy[asyncio]>=2.0
 aiosqlite>=0.20
 networkx>=3.2
+aiogram>=3.10
+matplotlib>=3.8

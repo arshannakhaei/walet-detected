@@ -8,7 +8,7 @@ from fastapi import HTTPException, Path, Query, Request
 
 from app.models import Chain, Direction
 from app.providers import ProviderError
-from app.services.addresses import detect_chains, normalize_address
+from app.services.addresses import AddressError, normalize_address, resolve_address
 from app.services.wallet import TransferFilter, UnsupportedChainError
 
 
@@ -19,18 +19,11 @@ class Target:
 
 
 def resolve(request: Request, address: str, chain: Chain | None) -> Target:
-    address = address.strip()
-    candidates = detect_chains(address)
-    if chain is not None:
-        if chain not in candidates:
-            raise HTTPException(400, f"address is not a valid {chain.value} address")
-    elif not candidates:
-        raise HTTPException(400, "unrecognized address format")
-    else:
-        # Prefer a chain we can actually query (an EVM address fits several).
-        supported = request.app.state.providers.supported_chains
-        chain = next((c for c in candidates if c in supported), candidates[0])
-    return Target(chain, normalize_address(chain, address))
+    try:
+        chain, address = resolve_address(address, chain, request.app.state.providers.supported_chains)
+    except AddressError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return Target(chain, address)
 
 
 def target(request: Request, address: str = Path(), chain: Chain | None = None) -> Target:

@@ -94,3 +94,22 @@ def normalize_address(chain: Chain, address: str) -> str:
     if chain in EVM_CHAINS:
         return address.lower()
     return address
+
+
+class AddressError(ValueError):
+    pass
+
+
+def resolve_address(address: str, chain: Chain | None, supported: list[Chain]) -> tuple[Chain, str]:
+    """Pick the chain for an address (explicit, or the first supported match) and normalize it."""
+    address = address.strip()
+    candidates = detect_chains(address)
+    if chain is not None:
+        if chain not in candidates:
+            raise AddressError(f"address is not a valid {chain.value} address")
+    elif not candidates:
+        raise AddressError("unrecognized address format")
+    else:
+        # Prefer a chain we can actually query (an EVM address fits several).
+        chain = next((c for c in candidates if c in supported), candidates[0])
+    return chain, normalize_address(chain, address)

@@ -79,7 +79,7 @@ class CaseService:
     def __init__(self, db: Database):
         self._db = db
 
-    async def list(self) -> list[CaseSummary]:
+    async def list_cases(self) -> list[CaseSummary]:
         async with self._db.sessions() as session:
             cases = list(await session.scalars(select(CaseRow).order_by(CaseRow.updated_at.desc())))
             items = list(await session.scalars(select(CaseItemRow.case_id)))

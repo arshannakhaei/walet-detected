@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 from fastapi import FastAPI
@@ -15,6 +16,7 @@ from app.providers import ProviderRegistry
 from app.services.cases import CaseService
 from app.services.graph import GraphBuilder
 from app.services.labels import LabelService
+from app.services.monitor import MonitorService
 from app.services.pricing import PriceService
 from app.services.risk import RiskAnalyzer
 from app.services.tracer import Tracer
@@ -49,7 +51,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.tracer = Tracer(wallets, labels, settings.hub_threshold)
         app.state.risk = RiskAnalyzer(wallets, labels, app.state.graph_builder)
         app.state.cases = CaseService(db)
+        monitor = MonitorService(db, wallets, poll_limit=settings.page_size)
+        app.state.monitor = monitor
+
+        bot = None
+        if settings.telegram_bot_token:
+            from app.bot.telegram import TelegramBot  # optional dependency path
+
+            services = SimpleNamespace(
+                providers=providers,
+                wallets=wallets,
+                labels=labels,
+                graphs=app.state.graph_builder,
+                tracer=app.state.tracer,
+                risk=app.state.risk,
+                monitor=monitor,
+            )
+            bot = TelegramBot(settings.telegram_bot_token, settings.telegram_user_ids, services, settings.public_url)
+            monitor.add_notifier(bot.notify)
+            bot.start()
+            logging.getLogger(__name__).info("Telegram bot started")
+        if settings.monitor_interval_seconds > 0:
+            monitor.start(settings.monitor_interval_seconds)
+
         yield
+
+        await monitor.stop()
+        if bot is not None:
+            await bot.stop()
         await client.aclose()
         await db.close()
 

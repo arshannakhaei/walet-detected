@@ -1,13 +1,15 @@
 """Fund-flow graph and amount tracing."""
 
+import asyncio
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import Target, call, normalized_filter, resolve, target, transfer_filter
 from app.models import Chain
 from app.services.graph import Graph, GraphBuilder, GraphParams
+from app.services.graph_image import render_png
 from app.services.tracer import (
     LotMethod,
     TraceDirection,
@@ -42,6 +44,22 @@ async def graph(
     )
     builder: GraphBuilder = request.app.state.graph_builder
     return await call(builder.build(t.chain, t.address, params))
+
+
+@router.get("/graph/{address}/image.png", response_class=Response)
+async def graph_png(
+    request: Request,
+    t: Target = Depends(target),
+    depth_in: int = Query(1, ge=0, le=3),
+    depth_out: int = Query(2, ge=0, le=3),
+    max_nodes: int = Query(40, ge=2, le=150),
+) -> Response:
+    builder: GraphBuilder = request.app.state.graph_builder
+    result = await call(
+        builder.build(t.chain, t.address, GraphParams(depth_in=depth_in, depth_out=depth_out, max_nodes=max_nodes))
+    )
+    png = await asyncio.to_thread(render_png, result, max_nodes)
+    return Response(png, media_type="image/png")
 
 
 class TraceRequest(BaseModel):

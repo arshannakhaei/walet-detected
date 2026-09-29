@@ -48,7 +48,7 @@ async def _guard(coro):
 
 @router.get("", response_model=list[CaseSummary])
 async def list_cases(request: Request) -> list[CaseSummary]:
-    return await _svc(request).list()
+    return await _svc(request).list_cases()
 
 
 @router.post("", response_model=Case, status_code=201)

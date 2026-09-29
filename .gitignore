@@ -6,3 +6,6 @@ venv/
 backend/data/*.db
 .pytest_cache/
 node_modules/
+
+# Download package built from git archive
+*.zip

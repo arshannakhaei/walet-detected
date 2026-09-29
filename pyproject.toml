@@ -1,0 +1,10 @@
+[project]
+name = "chaintrace"
+version = "0.1.0"
+description = "Multi-chain wallet transaction tracing and fund-flow analysis"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"

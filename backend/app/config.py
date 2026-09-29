@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Fetch limits
     max_transfers_per_address: int = 2000
     page_size: int = 200
+    # While building graphs and traces, an address with more transfers than
+    # this is treated as a hub (exchange, service) and not expanded further.
+    hub_threshold: int = 1000
     # Re-fetch an address from the chain when its cached data is older than this.
     cache_ttl_seconds: int = 300
 

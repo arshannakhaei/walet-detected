@@ -110,3 +110,34 @@ def test_invalid_address(client):
     assert client.get("/api/wallet/nope/overview").status_code == 400
     evm = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
     assert client.get(f"/api/wallet/{evm}/overview").status_code == 501
+
+
+def test_trace_endpoint(client):
+    body = {"address": WALLET, "tx_hash": "tx1", "max_hops": 1}
+    data = client.post("/api/trace", json=body).json()
+    assert Decimal(data["traced_amount"]) == 1000
+    # FIFO: the first 1000 USDT in leave with the 1200 USDT transfer to Bob.
+    assert data["endpoints"][0]["address"] == BOB
+    assert data["endpoints"][0]["reason"] == "max_hops"
+    assert Decimal(data["endpoints"][0]["amount"]) == 1000
+
+
+def test_trace_unknown_tx(client):
+    resp = client.post("/api/trace", json={"address": WALLET, "tx_hash": "nope"})
+    assert resp.status_code == 404
+
+
+def test_graph_endpoint_root_only(client):
+    data = client.get(f"/api/graph/{WALLET}", params={"depth_in": 0, "depth_out": 1, "token": "USDT"}).json()
+    assert {n["address"] for n in data["nodes"]} == {WALLET, BOB, CAROL}
+    assert all(n["stop_reason"] == "max_depth" for n in data["nodes"] if n["address"] != WALLET)
+
+
+def test_labels_crud(client):
+    assert client.put(f"/api/labels/tron/{BOB}", json={"name": "Bob", "category": "personal"}).status_code == 200
+    labels = {l["address"]: l for l in client.get("/api/labels", params={"chain": "tron"}).json()}
+    assert labels[BOB]["source"] == "user"
+    assert labels[USDT]["category"] == "token_contract"  # built-in list
+    assert client.put(f"/api/labels/tron/0xabc", json={"name": "x", "category": "other"}).status_code == 400
+    assert client.delete(f"/api/labels/tron/{BOB}").status_code == 204
+    assert client.delete(f"/api/labels/tron/{BOB}").status_code == 404

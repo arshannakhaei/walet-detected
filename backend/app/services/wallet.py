@@ -66,10 +66,15 @@ class WalletService:
         return provider
 
     async def load_transfers(
-        self, chain: Chain, address: str, refresh: bool = False
+        self, chain: Chain, address: str, refresh: bool = False, limit: int | None = None
     ) -> tuple[list[Transfer], bool]:
-        """Return (transfers newest first, truncated), fetching from the chain when stale."""
+        """Return (transfers newest first, truncated), fetching from the chain when stale.
+
+        `limit` caps how many transfers are downloaded (default: the configured
+        maximum). A wallet with more history than that comes back truncated.
+        """
         provider = self._provider(chain)
+        limit = limit or self._max_transfers
         sync = await self._db.get_sync(chain, address)
         stale = sync is None or refresh
         if sync is not None and not stale:
@@ -77,14 +82,17 @@ class WalletService:
             if synced_at.tzinfo is None:
                 synced_at = synced_at.replace(tzinfo=timezone.utc)
             stale = (datetime.now(timezone.utc) - synced_at).total_seconds() > self._cache_ttl
+            # An earlier, smaller fetch was cut short: fetch again with the larger limit.
+            stale = stale or (sync.truncated and sync.fetched_limit < limit)
         if stale:
-            page = await provider.get_transfers(address, self._max_transfers)
+            page = await provider.get_transfers(address, limit)
             await self._db.save_transfers(page.transfers)
-            await self._db.set_sync(chain, address, page.truncated)
+            await self._db.set_sync(chain, address, page.truncated, limit)
             truncated = page.truncated
         else:
             truncated = sync.truncated
-        return await self._db.transfers_for(chain, address), truncated
+        transfers = await self._db.transfers_for(chain, address)
+        return transfers, truncated
 
     async def transfers(
         self,

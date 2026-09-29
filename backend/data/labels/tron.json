@@ -1,0 +1,5 @@
+{
+  "_comment": "Known Tron addresses. Add entries as \"address\": {\"name\": ..., \"category\": ...}. Categories: exchange, bridge, mixer, defi, token_contract, sanctioned, scam, service, personal, other.",
+  "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t": {"name": "Tether USD (USDT) contract", "category": "token_contract"},
+  "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8": {"name": "USD Coin (USDC) contract", "category": "token_contract"}
+}

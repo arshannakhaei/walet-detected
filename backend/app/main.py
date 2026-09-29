@@ -12,6 +12,9 @@ from app.api.routes import router
 from app.config import Settings, get_settings
 from app.db import Database
 from app.providers import ProviderRegistry
+from app.services.graph import GraphBuilder
+from app.services.labels import LabelService
+from app.services.tracer import Tracer
 from app.services.wallet import WalletService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -31,9 +34,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         providers = ProviderRegistry(settings, client)
         app.state.db = db
         app.state.providers = providers
-        app.state.wallet_service = WalletService(
-            db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds
-        )
+        wallets = WalletService(db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds)
+        labels = LabelService(db)
+        await labels.load()
+        app.state.wallet_service = wallets
+        app.state.labels = labels
+        app.state.graph_builder = GraphBuilder(wallets, labels, settings.hub_threshold)
+        app.state.tracer = Tracer(wallets, labels, settings.hub_threshold)
         yield
         await client.aclose()
         await db.close()

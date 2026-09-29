@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, String, or_, select
+from sqlalchemy import Boolean, DateTime, Integer, String, delete, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -57,6 +57,21 @@ class AddressSyncRow(Base):
     address: Mapped[str] = mapped_column(String(100), primary_key=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # How many transfers were requested in the last fetch; a truncated fetch
+    # is redone when a caller later needs more than this.
+    fetched_limit: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class LabelRow(Base):
+    """A label the user attached to an address by hand."""
+
+    __tablename__ = "labels"
+
+    chain: Mapped[str] = mapped_column(String(16), primary_key=True)
+    address: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(40))
+    note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
 class Database:
@@ -67,6 +82,12 @@ class Database:
     async def init(self) -> None:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Databases created by v0.1 lack this column.
+            cols = [r[1] for r in await conn.execute(text("PRAGMA table_info(address_sync)"))]
+            if "fetched_limit" not in cols:
+                await conn.execute(
+                    text("ALTER TABLE address_sync ADD COLUMN fetched_limit INTEGER NOT NULL DEFAULT 0")
+                )
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -99,7 +120,7 @@ class Database:
         async with self.sessions() as session:
             return await session.get(AddressSyncRow, (chain.value, address))
 
-    async def set_sync(self, chain: Chain, address: str, truncated: bool) -> None:
+    async def set_sync(self, chain: Chain, address: str, truncated: bool, fetched_limit: int) -> None:
         async with self.sessions.begin() as session:
             await session.merge(
                 AddressSyncRow(
@@ -107,5 +128,24 @@ class Database:
                     address=address,
                     synced_at=datetime.now(timezone.utc),
                     truncated=truncated,
+                    fetched_limit=fetched_limit,
                 )
             )
+
+    async def list_labels(self, chain: Chain | None = None) -> list[LabelRow]:
+        async with self.sessions() as session:
+            stmt = select(LabelRow)
+            if chain is not None:
+                stmt = stmt.where(LabelRow.chain == chain.value)
+            return list(await session.scalars(stmt))
+
+    async def upsert_label(self, row: LabelRow) -> None:
+        async with self.sessions.begin() as session:
+            await session.merge(row)
+
+    async def delete_label(self, chain: Chain, address: str) -> bool:
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                delete(LabelRow).where(LabelRow.chain == chain.value, LabelRow.address == address)
+            )
+            return result.rowcount > 0

@@ -6,6 +6,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend backend
 COPY frontend/dist frontend/dist
 COPY run.py mcp_server.py ./
-ENV HOST=0.0.0.0 PORT=8000
-EXPOSE 8000
-CMD ["python", "run.py"]
+ENV HOST=0.0.0.0 PORT=8765
+EXPOSE 8765
+CMD ["python", "run.py", "--no-browser"]

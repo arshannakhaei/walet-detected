@@ -4,6 +4,7 @@ set -e
 cd "$(dirname "$0")"
 PY=${PYTHON:-python3}
 command -v "$PY" >/dev/null || { echo "Python 3.11+ is required"; exit 1; }
+"$PY" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" || { echo "Python 3.11 or newer is required"; exit 1; }
 [ -d .venv ] || "$PY" -m venv .venv
 . .venv/bin/activate
 # Reinstall whenever requirements.txt differs from the copy made at the last install.
@@ -14,5 +15,5 @@ if ! cmp -s requirements.txt .venv/requirements.installed; then
   cp requirements.txt .venv/requirements.installed
 fi
 [ -f .env ] || cp .env.example .env
-( sleep 2; (xdg-open http://127.0.0.1:8000 || open http://127.0.0.1:8000) >/dev/null 2>&1 ) &
+# run.py picks a usable port and opens the browser once the server answers.
 exec python run.py

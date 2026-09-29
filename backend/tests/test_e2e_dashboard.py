@@ -50,7 +50,7 @@ def server(tmp_path_factory):
         "DATABASE_URL": f"sqlite+aiosqlite:///{db}",
         "TELEGRAM_BOT_TOKEN": "",
     }
-    proc = subprocess.Popen([sys.executable, "run.py"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen([sys.executable, "run.py", "--no-browser"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     base = f"http://127.0.0.1:{port}"
     for _ in range(60):
         try:

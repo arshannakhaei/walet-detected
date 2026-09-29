@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 8765  # 8000 is often reserved on Windows (Hyper-V/WSL) or taken
 
     # Offline demo: Tron serves a built-in synthetic scam scenario (no internet needed)
     demo_mode: bool = False

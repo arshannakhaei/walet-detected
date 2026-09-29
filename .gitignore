@@ -9,3 +9,4 @@ node_modules/
 
 # Download package built from git archive
 *.zip
+chaintrace.log

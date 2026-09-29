@@ -211,18 +211,27 @@ class EvmProvider(ChainProvider):
 
     async def get_transfers(self, address: str, max_items: int) -> TransferPage:
         address = address.lower()
-        native, more_native = await self._list("txlist", address, max_items)
-        try:
-            tokens, more_tokens = await self._list("tokentx", address, max_items)
-        except RateLimitError:
-            if not native:
-                raise
+        # The three lists download side by side; the rate limiter still spaces requests.
+        native_r, tokens_r, internal_r = await asyncio.gather(
+            self._list("txlist", address, max_items),
+            self._list("tokentx", address, max_items),
+            self._list("txlistinternal", address, max_items),
+            return_exceptions=True,
+        )
+        if isinstance(native_r, BaseException):
+            raise native_r
+        native, more_native = native_r
+        if isinstance(tokens_r, RateLimitError) and native:
             tokens, more_tokens = [], True  # show native transfers rather than nothing
-        try:
-            internal, more_internal = await self._list("txlistinternal", address, max_items)
-        except ProviderError as exc:  # not every explorer supports internal txs
-            log.info("internal transactions unavailable on %s: %s", self.chain.value, exc)
+        elif isinstance(tokens_r, BaseException):
+            raise tokens_r
+        else:
+            tokens, more_tokens = tokens_r
+        if isinstance(internal_r, BaseException):  # optional: not every explorer supports it, and it is slow
+            log.info("internal transactions unavailable on %s: %s", self.chain.value, internal_r)
             internal, more_internal = [], False
+        else:
+            internal, more_internal = internal_r
         transfers = (
             parse_native(native, self.chain, self._symbol)
             + parse_internal(internal, self.chain, self._symbol)

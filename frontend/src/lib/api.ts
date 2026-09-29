@@ -84,6 +84,7 @@ export interface WalletOverview {
   counterparty_count: number
   flows: TokenFlow[]
   truncated: boolean
+  loading_more: boolean
 }
 
 export interface Counterparty {

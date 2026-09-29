@@ -33,7 +33,7 @@ export function OverviewTab({
 
   return (
     <div className="flex flex-col gap-4">
-      {o.truncated && (
+      {o.truncated && !o.loading_more && (
         <div className="flex items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm">
           <AlertTriangle className="size-4 shrink-0" />
           {t('truncated')}

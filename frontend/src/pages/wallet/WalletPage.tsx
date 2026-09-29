@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Briefcase, Eye, FileText, GitFork, LayoutDashboard, List, RefreshCw, ShieldAlert, Tag, Users } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Briefcase, Eye, FileText, GitFork, LayoutDashboard, List, Loader2, RefreshCw, ShieldAlert, Tag, Users } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Address } from '../../components/Address'
 import { ChainBadge, RiskBadge } from '../../components/badges'
 import { AddToCaseDialog, LabelDialog } from '../../components/dialogs'
@@ -15,6 +15,21 @@ import { GraphTab } from './GraphTab'
 import { OverviewTab } from './OverviewTab'
 import { RiskTab } from './RiskTab'
 import { TransfersTab } from './TransfersTab'
+
+/** Seconds since `running` became true (for the loading screen). */
+function useElapsed(running: boolean): number {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    if (!running) return
+    const start = Date.now()
+    const id = setInterval(() => setSeconds(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => {
+      clearInterval(id)
+      setSeconds(0)
+    }
+  }, [running])
+  return seconds
+}
 
 type TabId = 'overview' | 'counterparties' | 'transfers' | 'graph' | 'risk'
 
@@ -30,7 +45,13 @@ export function WalletPage() {
   const labels = useLabelMap(chain)
   const keys = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 })
 
-  const overview = useQuery({ queryKey: ['overview', chain, address], queryFn: () => api.overview(address, chain) })
+  const overview = useQuery({
+    queryKey: ['overview', chain, address],
+    queryFn: () => api.overview(address, chain),
+    // Poll while the rest of the history downloads in the background.
+    refetchInterval: (q) => (q.state.data?.loading_more ? 4000 : false),
+  })
+  const elapsed = useElapsed(overview.isPending)
   // The canonical form (e.g. lower-case EVM) as returned by the API.
   const addr = overview.data?.address ?? address
   const risk = useQuery({
@@ -44,6 +65,15 @@ export function WalletPage() {
   useEffect(() => {
     if (overview.isSuccess) rememberSearch(chain, addr)
   }, [overview.isSuccess, chain, addr])
+
+  const loadingMore = overview.data?.loading_more ?? false
+  const wasLoading = useRef(false)
+  useEffect(() => {
+    if (wasLoading.current && !loadingMore) {
+      qc.invalidateQueries({ predicate: (q) => q.queryKey.includes(addr) && q.queryKey[0] !== 'overview' })
+    }
+    wasLoading.current = loadingMore
+  }, [loadingMore, addr, qc])
 
   const refresh = useMutation({
     mutationFn: () => api.refresh(addr, chain),
@@ -106,12 +136,23 @@ export function WalletPage() {
           label={
             <span className="flex flex-col items-center gap-1 text-center">
               {t('loading_chain')}
-              {chain === 'tron' && keys.data && !keys.data.trongrid_api_key && !keys.data.demo_mode && (
-                <span className="text-xs text-muted">{t('slow_without_key')}</span>
+              <span className="tabular text-xs text-muted">
+                {elapsed} {t('seconds')}
+              </span>
+              {elapsed >= 5 && keys.data && !keys.data.demo_mode && !(chain === 'tron' ? keys.data.trongrid_api_key : keys.data.etherscan_api_key) && (
+                <Link to="/settings" className="text-xs text-accent hover:underline">
+                  {t('slow_without_key')}
+                </Link>
               )}
             </span>
           }
         />
+      )}
+      {loadingMore && (
+        <div className="flex items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-sm text-accent">
+          <Loader2 className="size-4 shrink-0 animate-spin" />
+          {t('loading_more')}
+        </div>
       )}
       {overview.isError && <ErrorBox error={overview.error} onRetry={() => overview.refetch()} />}
       {overview.data && (

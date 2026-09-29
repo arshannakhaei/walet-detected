@@ -36,6 +36,8 @@ class KeysIn(BaseModel):
 
 
 def _is_local(request: Request) -> bool:
+    if request.app.state.services.settings.settings_from_any_client:
+        return True
     return (request.client.host if request.client else "") in LOCAL_CLIENTS
 
 

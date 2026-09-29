@@ -55,7 +55,15 @@ pip install -r requirements.txt
 python run.py
 ```
 
-با Docker (اختیاری): `docker compose up -d`
+### اجرا با Docker (اختیاری)
+
+1. [Docker Desktop](https://www.docker.com/products/docker-desktop/) را نصب و اجرا کنید (در ویندوز به WSL2 نیاز دارد).
+2. روی `start-docker.bat` دوبار کلیک کنید (یا: `copy .env.example .env` و بعد `docker compose up -d --build`).
+3. <http://127.0.0.1:8765> را باز کنید. برای توقف: `docker compose down`.
+
+کلیدهای API را از صفحه‌ی تنظیمات وارد کنید؛ در `.env` ذخیره می‌شوند و بعد از restart کانتینر می‌مانند. کش و پرونده‌ها در `backend/data` می‌مانند.
+
+> Docker سرعت را زیاد نمی‌کند: کندی از سقف درخواست APIهای رایگان بلاکچین است، نه از کامپیوتر. برای سرعت، کلیدهای رایگان TronGrid و Etherscan را در تنظیمات وارد کنید. از این نسخه، صفحه‌ی ولت جدیدترین تراکنش‌ها را در چند ثانیه نشان می‌دهد و بقیه‌ی تاریخچه در پس‌زمینه دریافت می‌شود.
 
 ---
 

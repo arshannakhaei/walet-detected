@@ -1,5 +1,6 @@
 """Tron data via the TronGrid v1 API: TRX transfers, TRC20 transfers, balances."""
 
+import asyncio
 import logging
 from collections import Counter
 from datetime import datetime, timezone
@@ -133,15 +134,20 @@ class TronProvider(ChainProvider):
             params["fingerprint"] = fingerprint
 
     async def get_transfers(self, address: str, max_items: int) -> TransferPage:
-        trc20_raw, trc20_more = await self._paginate(
-            f"/v1/accounts/{address}/transactions/trc20", {}, max_items
+        trc20_r, trx_r = await asyncio.gather(
+            self._paginate(f"/v1/accounts/{address}/transactions/trc20", {}, max_items),
+            self._paginate(f"/v1/accounts/{address}/transactions", {}, max_items),
+            return_exceptions=True,
         )
-        try:
-            trx_raw, trx_more = await self._paginate(f"/v1/accounts/{address}/transactions", {}, max_items)
-        except ProviderError:
-            if not trc20_raw:
-                raise
+        if isinstance(trc20_r, BaseException):
+            raise trc20_r
+        trc20_raw, trc20_more = trc20_r
+        if isinstance(trx_r, ProviderError) and trc20_raw:
             trx_raw, trx_more = [], True  # show the token transfers rather than nothing
+        elif isinstance(trx_r, BaseException):
+            raise trx_r
+        else:
+            trx_raw, trx_more = trx_r
         transfers = parse_trc20_transfers(trc20_raw) + parse_trx_transfers(trx_raw)
         for t in transfers:
             if t.token_contract:

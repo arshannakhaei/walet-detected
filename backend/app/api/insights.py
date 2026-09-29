@@ -43,7 +43,7 @@ async def wallet_timeline(
     token: str | None = None,
 ) -> list[TimelineRow]:
     wallets: WalletService = request.app.state.wallet_service
-    transfers, _ = await call(wallets.load_transfers(t.chain, t.address))
+    transfers, _ = await call(wallets.load_transfers(t.chain, t.address, quick=True))
     rows = timeline(t.address, transfers, bucket, token)
     return [TimelineRow(**{**r, "amount_in": str(r["amount_in"]), "amount_out": str(r["amount_out"])}) for r in rows]
 

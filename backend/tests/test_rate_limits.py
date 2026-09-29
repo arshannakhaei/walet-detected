@@ -142,3 +142,50 @@ def test_settings_api_refuses_remote_clients(tmp_path, monkeypatch):
     with TestClient(create_app(settings)) as c:
         assert c.get("/api/settings").json()["can_edit"] is False
         assert c.put("/api/settings/keys", json={"trongrid_api_key": "x"}).status_code == 403
+
+
+async def test_quick_first_page_then_background_completion(tmp_path):
+    from app.db import Database
+    from app.providers import TransferPage
+    from tests.test_tracing import usdt
+
+    many = [usdt(f"q{i}", SCAMMER, f"T{i:033d}", 1, i) for i in range(250)]
+
+    class Paged(FakeProvider):
+        async def get_transfers(self, address, max_items):
+            await asyncio.sleep(0.05 if max_items <= 100 else 0.3)
+            self.calls.append(max_items)
+            mine = sorted(self.transfers, key=lambda t: t.timestamp, reverse=True)
+            return TransferPage(mine[:max_items], truncated=len(mine) > max_items)
+
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'q.db'}")
+    await db.init()
+    provider = Paged(many)
+    wallets = WalletService(db, FakeRegistry(provider), 1000, 3600)
+
+    first, truncated = await wallets.load_transfers(Chain.TRON, SCAMMER, quick=True)
+    assert len(first) == 100 and truncated
+    assert wallets.loading_more(Chain.TRON, SCAMMER)
+
+    # While the rest downloads, quick readers get the cached page immediately.
+    again, _ = await asyncio.wait_for(wallets.load_transfers(Chain.TRON, SCAMMER, quick=True), 0.1)
+    assert len(again) == 100
+
+    # A full reader (graph, trace) waits for the complete history.
+    full, truncated = await wallets.load_transfers(Chain.TRON, SCAMMER)
+    assert len(full) == 250 and not truncated
+    assert not wallets.loading_more(Chain.TRON, SCAMMER)
+    assert provider.calls == [100, 1000]
+    overview = await wallets.overview(Chain.TRON, SCAMMER)
+    assert overview.transfer_count == 250 and overview.loading_more is False
+    await wallets.close()
+    await db.close()
+
+
+async def test_timeouts_are_retried_only_once():
+    async with httpx.AsyncClient() as client, respx.mock() as r:
+        route = r.get(f"{TG}/v1/accounts/{WALLET}").mock(side_effect=httpx.ReadTimeout("slow"))
+        provider = fast(TronProvider(client, RateLimiter(0), TG))
+        with pytest.raises(Exception, match="request failed"):
+            await provider.get_balances(WALLET)
+        assert route.call_count == 2

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
 
     # Offline demo: Tron serves a built-in synthetic scam scenario (no internet needed)
     demo_mode: bool = False
+    # Allow API keys to be changed from any client, not only 127.0.0.1. Docker
+    # needs this (requests arrive from the bridge network); compose publishes the
+    # port on 127.0.0.1 only, so it stays local.
+    settings_from_any_client: bool = False
 
     # Storage
     database_url: str = f"sqlite+aiosqlite:///{(BASE_DIR / 'data' / 'chaintrace.db').as_posix()}"

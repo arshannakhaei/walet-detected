@@ -104,7 +104,7 @@ class RiskAnalyzer:
         self._graphs = graphs
 
     async def analyze(self, chain: Chain, address: str, deep: bool = False) -> RiskReport:
-        transfers, truncated = await self._wallets.load_transfers(chain, address)
+        transfers, truncated = await self._wallets.load_transfers(chain, address, quick=True)
         findings = analyze_transfers(chain, address, transfers, self._labels)
         if deep:
             findings.extend(await self._indirect_exposure(chain, address))

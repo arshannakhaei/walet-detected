@@ -36,6 +36,7 @@ class Services:
 
     async def close(self) -> None:
         await self.monitor.stop()
+        await self.wallets.close()
         await self.client.aclose()
         await self.db.close()
 

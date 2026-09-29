@@ -57,6 +57,7 @@ class ChainProvider(ABC):
     async def _request(self, method: str, url: str, **kwargs):
         last_error: Exception | None = None
         rate_limited = False
+        timeouts = 0
         for attempt in range(self._retries):
             await self._limiter.wait()
             response: httpx.Response | None = None
@@ -73,6 +74,11 @@ class ChainProvider(ABC):
                 status = exc.response.status_code
                 if status < 500 and status != 429 and status not in self.rate_limit_statuses:
                     break  # client errors (bad address, bad key) will not fix themselves
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                timeouts += 1
+                if timeouts >= 2:
+                    break  # a slow API stays slow; do not wait minutes on it
             except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
             if attempt + 1 >= self._retries:

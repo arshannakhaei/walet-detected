@@ -1,11 +1,16 @@
+# Optional: run ChainTrace in Docker.  First time:  copy .env.example .env
+# then:  docker compose up -d --build   and open http://127.0.0.1:8765
+# Docker does not make blockchain APIs faster; add free API keys in Settings for that.
 services:
   chaintrace:
     build: .
     ports:
-      - "8765:8765"
-    env_file:
-      - path: .env
-        required: false
+      - "127.0.0.1:8765:8765"   # reachable from this computer only
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8765
+      SETTINGS_FROM_ANY_CLIENT: "true"   # lets the Settings page save keys from inside Docker
     volumes:
-      - ./backend/data:/app/backend/data   # database and label lists survive rebuilds
+      - ./backend/data:/app/backend/data   # cache, cases, labels survive rebuilds
+      - ./.env:/app/.env                   # API keys saved from Settings persist
     restart: unless-stopped

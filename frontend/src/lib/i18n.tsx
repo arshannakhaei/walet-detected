@@ -257,7 +257,9 @@ const fa = {
   rate_limited_body:
     'سرویس داده (مثلاً TronGrid یا Blockscout) بدون کلید API فقط چند درخواست در ثانیه قبول می‌کند؛ با VPN این سقف زودتر پر می‌شود چون IP مشترک است. یک دقیقه صبر کنید و دوباره امتحان کنید، یا کلید رایگان را در تنظیمات وارد کنید.',
   add_key_now: 'وارد کردن کلید API',
-  slow_without_key: 'بدون کلید API، دریافت ولت‌های پرتراکنش ترون ممکن است یک دقیقه طول بکشد.',
+  slow_without_key: 'بدون کلید API سرویس‌های رایگان کند هستند و ولت‌های پرتراکنش ممکن است یک دقیقه طول بکشند. کلید رایگان را در تنظیمات وارد کنید.',
+  loading_more: 'جدیدترین تراکنش‌ها نمایش داده شده؛ بقیه‌ی تاریخچه در حال دریافت است و صفحه خودش به‌روز می‌شود…',
+  seconds: 'ثانیه',
   language: 'زبان',
   theme: 'پوسته',
   theme_light: 'روشن',
@@ -534,7 +536,9 @@ const en: Dict = {
   rate_limited_body:
     'Without an API key the data service (e.g. TronGrid or Blockscout) accepts only a few requests per second; behind a VPN the shared IP hits it sooner. Wait a minute and retry, or add a free key in Settings.',
   add_key_now: 'Add an API key',
-  slow_without_key: 'Without an API key, busy Tron wallets can take a minute to load.',
+  slow_without_key: 'Without API keys the free services are slow and busy wallets can take a minute. Add a free key in Settings.',
+  loading_more: 'Showing the newest transfers; the rest of the history is downloading and the page updates itself…',
+  seconds: 's',
   language: 'Language',
   theme: 'Theme',
   theme_light: 'Light',

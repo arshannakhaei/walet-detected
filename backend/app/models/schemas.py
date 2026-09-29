@@ -88,6 +88,7 @@ class WalletOverview(BaseModel):
     truncated: bool = Field(
         description="True when the wallet has more history than the fetch limit allows."
     )
+    loading_more: bool = Field(False, description="The rest of the history is still downloading.")
 
 
 class Counterparty(BaseModel):

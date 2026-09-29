@@ -1,6 +1,7 @@
 """Wallet analysis: cached transfer history, overview stats and counterparties."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -18,6 +19,11 @@ from app.models import (
 from app.providers import ProviderRegistry
 from app.services.pricing import PriceService
 from app.services.tokens import is_spam
+
+log = logging.getLogger(__name__)
+
+# First-view page size for a wallet seen for the first time.
+QUICK_PAGE = 100
 
 
 class UnsupportedChainError(Exception):
@@ -75,6 +81,8 @@ class WalletService:
         # One download per address at a time: the overview, risk and graph views
         # often ask for the same wallet at once.
         self._locks: dict[tuple[Chain, str], asyncio.Lock] = {}
+        # Full-history downloads running in the background after a quick first page.
+        self._background: dict[tuple[Chain, str], asyncio.Task] = {}
 
     def _provider(self, chain: Chain):
         provider = self._providers.get(chain)
@@ -82,20 +90,42 @@ class WalletService:
             raise UnsupportedChainError(f"chain '{chain.value}' is not supported yet")
         return provider
 
+    async def close(self) -> None:
+        for task in self._background.values():
+            task.cancel()
+        await asyncio.gather(*self._background.values(), return_exceptions=True)
+
+    def loading_more(self, chain: Chain, address: str) -> bool:
+        """True while the rest of this wallet's history is still being downloaded."""
+        task = self._background.get((chain, address))
+        return task is not None and not task.done()
+
     async def load_transfers(
-        self, chain: Chain, address: str, refresh: bool = False, limit: int | None = None
+        self,
+        chain: Chain,
+        address: str,
+        refresh: bool = False,
+        limit: int | None = None,
+        quick: bool = False,
     ) -> tuple[list[Transfer], bool]:
         """Return (transfers newest first, truncated), fetching from the chain when stale.
 
         `limit` caps how many transfers are downloaded (default: the configured
         maximum). A wallet with more history than that comes back truncated.
+
+        With `quick`, a wallet seen for the first time returns after its newest
+        page, and the rest downloads in the background (see `loading_more`); while
+        that runs, quick callers get what is cached so far instead of waiting.
         """
-        lock = self._locks.setdefault((chain, address), asyncio.Lock())
+        key = (chain, address)
+        if quick and self.loading_more(chain, address):
+            return await self._db.transfers_for(chain, address), True
+        lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
-            return await self._load_transfers(chain, address, refresh, limit)
+            return await self._load_transfers(chain, address, refresh, limit, quick)
 
     async def _load_transfers(
-        self, chain: Chain, address: str, refresh: bool, limit: int | None
+        self, chain: Chain, address: str, refresh: bool, limit: int | None, quick: bool = False
     ) -> tuple[list[Transfer], bool]:
         provider = self._provider(chain)
         limit = limit or self._max_transfers
@@ -111,14 +141,29 @@ class WalletService:
             # An earlier, smaller fetch was cut short: fetch again with the larger limit.
             stale = stale or (sync.truncated and sync.fetched_limit < limit)
         if stale:
-            page = await provider.get_transfers(address, limit)
+            fetch_limit = min(limit, QUICK_PAGE) if quick and sync is None else limit
+            page = await provider.get_transfers(address, fetch_limit)
             await self._db.save_transfers(page.transfers)
-            await self._db.set_sync(chain, address, page.truncated, limit)
+            await self._db.set_sync(chain, address, page.truncated, fetch_limit)
             truncated = page.truncated
+            if truncated and fetch_limit < limit:
+                self._start_background(chain, address, limit)
         else:
             truncated = sync.truncated
         transfers = await self._db.transfers_for(chain, address)
         return transfers, truncated
+
+    def _start_background(self, chain: Chain, address: str, limit: int) -> None:
+        async def run():
+            try:
+                await asyncio.sleep(0)  # let the quick answer go out first
+                lock = self._locks.setdefault((chain, address), asyncio.Lock())
+                async with lock:
+                    await self._load_transfers(chain, address, False, limit)
+            except Exception as exc:  # the quick page is already shown; keep it
+                log.warning("background download of %s %s stopped: %s", chain.value, address, exc)
+
+        self._background[(chain, address)] = asyncio.create_task(run())
 
     async def transfers(
         self,
@@ -129,7 +174,7 @@ class WalletService:
         offset: int = 0,
     ) -> tuple[list[TransferView], int]:
         """Filtered transfers from the wallet's point of view, plus the total match count."""
-        all_transfers, _ = await self.load_transfers(chain, address)
+        all_transfers, _ = await self.load_transfers(chain, address, quick=True)
         matched = [t for t in all_transfers if flt.matches(t, address)]
         views = [
             TransferView(transfer=t, direction=t.direction_for(address), counterparty=t.counterparty_for(address))
@@ -138,7 +183,7 @@ class WalletService:
         return views, len(matched)
 
     async def overview(self, chain: Chain, address: str) -> WalletOverview:
-        transfers, truncated = await self.load_transfers(chain, address)
+        transfers, truncated = await self.load_transfers(chain, address, quick=True)
         provider = self._provider(chain)
         balances = await provider.get_balances(address)
 
@@ -196,13 +241,14 @@ class WalletService:
             counterparty_count=len(counterparties),
             flows=sorted(flows.values(), key=lambda f: f.count_in + f.count_out, reverse=True),
             truncated=truncated,
+            loading_more=self.loading_more(chain, address),
         )
 
     async def counterparties(
         self, chain: Chain, address: str, flt: TransferFilter
     ) -> list[Counterparty]:
         """Who sent money to / received money from this wallet, per token, largest first."""
-        transfers, _ = await self.load_transfers(chain, address)
+        transfers, _ = await self.load_transfers(chain, address, quick=True)
         grouped: dict[tuple[str, str, str | None], Counterparty] = {}
         for t in transfers:
             if not flt.matches(t, address):

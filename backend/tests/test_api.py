@@ -147,3 +147,47 @@ def test_labels_crud(client):
     assert client.put(f"/api/labels/tron/0xabc", json={"name": "x", "category": "other"}).status_code == 400
     assert client.delete(f"/api/labels/tron/{BOB}").status_code == 204
     assert client.delete(f"/api/labels/tron/{BOB}").status_code == 404
+
+
+def test_risk_and_timeline(client):
+    report = client.get(f"/api/wallet/{WALLET}/risk").json()
+    assert 0 <= report["score"] <= 100 and report["stats"]["main_token"] == "USDT"
+    rows = client.get(f"/api/wallet/{WALLET}/timeline").json()
+    assert rows and rows[0]["period"] == "2023-11-14"
+
+
+def test_csv_exports(client):
+    resp = client.get(f"/api/wallet/{WALLET}/transfers.csv")
+    assert resp.status_code == 200 and "text/csv" in resp.headers["content-type"]
+    lines = resp.text.lstrip("﻿").strip().splitlines()
+    assert lines[0].startswith("time_utc,tx_hash") and len(lines) == 6  # header + 5 successful
+    cps = client.get(f"/api/wallet/{WALLET}/counterparties.csv").text
+    assert ALICE in cps
+
+
+def test_wallet_report_html(client):
+    html = client.get(f"/api/wallet/{WALLET}/report").text
+    assert "dir='rtl'" in html and WALLET in html
+
+
+def test_cases_flow(client):
+    case = client.post("/api/cases", json={"title": "Scam #1", "description": "victim report"}).json()
+    cid = case["id"]
+    item = client.post(f"/api/cases/{cid}/items", json={"kind": "address", "address": WALLET, "note": "suspect"}).json()
+    assert item["chain"] == "tron"
+    trace = {"address": WALLET, "tx_hash": "tx1", "max_hops": 1}
+    traced = client.post(f"/api/cases/{cid}/items", json={"kind": "trace", "trace": trace, "title": "t1"}).json()
+    assert Decimal(traced["data"]["traced_amount"]) == 1000
+    client.post(f"/api/cases/{cid}/items", json={"kind": "note", "title": "call", "note": "victim called"})
+
+    full = client.get(f"/api/cases/{cid}").json()
+    assert [i["kind"] for i in full["items"]] == ["address", "trace", "note"]
+    assert client.get("/api/cases").json()[0]["item_count"] == 3
+
+    html = client.get(f"/api/cases/{cid}/report", params={"lang": "en"}).text
+    assert "Scam #1" in html and "victim called" in html and BOB in html
+
+    assert client.patch(f"/api/cases/{cid}", json={"status": "closed"}).json()["status"] == "closed"
+    assert client.delete(f"/api/cases/{cid}/items/{item['id']}").status_code == 204
+    assert client.delete(f"/api/cases/{cid}").status_code == 204
+    assert client.get(f"/api/cases/{cid}").status_code == 404

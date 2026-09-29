@@ -12,9 +12,11 @@ from app.api import router
 from app.config import Settings, get_settings
 from app.db import Database
 from app.providers import ProviderRegistry
+from app.services.cases import CaseService
 from app.services.graph import GraphBuilder
 from app.services.labels import LabelService
 from app.services.pricing import PriceService
+from app.services.risk import RiskAnalyzer
 from app.services.tracer import Tracer
 from app.services.wallet import WalletService
 
@@ -45,6 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.labels = labels
         app.state.graph_builder = GraphBuilder(wallets, labels, settings.hub_threshold)
         app.state.tracer = Tracer(wallets, labels, settings.hub_threshold)
+        app.state.risk = RiskAnalyzer(wallets, labels, app.state.graph_builder)
+        app.state.cases = CaseService(db)
         yield
         await client.aclose()
         await db.close()

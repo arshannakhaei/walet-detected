@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, String, delete, or_, select, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, delete, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -74,9 +74,85 @@ class LabelRow(Base):
     note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class CaseRow(Base):
+    """An investigation: a named collection of addresses, traces and notes."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CaseItemRow(Base):
+    __tablename__ = "case_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # address, trace, note
+    chain: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON snapshot (trace results)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WatchRow(Base):
+    """An address monitored for new transfers."""
+
+    __tablename__ = "watchlist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chain: Mapped[str] = mapped_column(String(16))
+    address: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(200), default="")
+    min_amount: Mapped[str] = mapped_column(String(80), default="0")
+    token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Transfers at or before this moment have been reported already.
+    seen_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AlertRow(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    watch_id: Mapped[int] = mapped_column(ForeignKey("watchlist.id", ondelete="CASCADE"), index=True)
+    chain: Mapped[str] = mapped_column(String(16))
+    address: Mapped[str] = mapped_column(String(100))
+    transfer_id: Mapped[str] = mapped_column(String(300))
+    tx_hash: Mapped[str] = mapped_column(String(100))
+    direction: Mapped[str] = mapped_column(String(8))
+    counterparty: Mapped[str] = mapped_column(String(100))
+    amount: Mapped[str] = mapped_column(String(80))
+    token_symbol: Mapped[str] = mapped_column(String(40))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Database:
     def __init__(self, url: str):
         self.engine: AsyncEngine = create_async_engine(url)
+        if url.startswith("sqlite"):
+            from sqlalchemy import event
+
+            @event.listens_for(self.engine.sync_engine, "connect")
+            def _fk_on(dbapi_conn, _record):  # SQLite ignores ON DELETE CASCADE without this
+                cursor = dbapi_conn.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
+
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
 
     async def init(self) -> None:

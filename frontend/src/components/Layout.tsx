@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bell, Briefcase, Eye, Languages, Moon, Network, Route, Search, Settings, Sun, Tags } from 'lucide-react'
+import { Bell, Briefcase, Coins, Eye, Languages, Moon, Network, Route, Search, Settings, Sun, Tags } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { resolveSearch } from '../lib/search'
 import { useI18n, type TKey } from '../lib/i18n'
+import { useCurrency, type CurrencyMode } from '../lib/money'
 import { useTheme } from '../lib/theme'
 
 const NAV: { to: string; key: TKey; icon: typeof Search }[] = [
@@ -53,6 +54,27 @@ function HeaderSearch() {
         className="h-10 w-full rounded-lg border border-line bg-surface-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:bg-surface focus:outline-none ps-9 pe-3"
       />
     </form>
+  )
+}
+
+function CurrencySelect() {
+  const { t } = useI18n()
+  const { mode, setMode } = useCurrency()
+  return (
+    <label className="flex items-center gap-1 rounded-lg px-1 text-ink-2 hover:bg-surface-2" title={t('currency_label')}>
+      <Coins className="hidden size-5 shrink-0 sm:block" />
+      <select
+        aria-label={t('currency_label')}
+        value={mode}
+        onChange={(e) => setMode(e.target.value as CurrencyMode)}
+        className="h-9 max-w-24 cursor-pointer bg-transparent text-[11px] font-bold text-ink-2 focus:outline-none sm:max-w-none sm:text-xs"
+      >
+        <option value="all">{t('currency_all')}</option>
+        <option value="toman">{t('currency_toman')}</option>
+        <option value="usd">{t('currency_usd')}</option>
+        <option value="token">{t('currency_token')}</option>
+      </select>
+    </label>
   )
 }
 
@@ -112,6 +134,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
           <HeaderSearch />
           <div className="ms-auto flex items-center gap-1">
+            <CurrencySelect />
             <AlertsBell />
             <button
               onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')}

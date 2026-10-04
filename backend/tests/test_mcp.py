@@ -64,3 +64,24 @@ async def test_wallet_links(services):
     assert len(data["groups"]) == 1
     with pytest.raises(ToolError, match="at least two"):
         await mcp_server.wallet_links([VICTIM])
+
+
+async def test_money_value(services, tmp_path):
+    from decimal import Decimal
+
+    import httpx
+
+    from app.db import Database
+    from app.services.fx import ValueService
+    from app.services.pricing import PriceService
+
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'v.db'}")
+    await db.init()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503))) as client:
+        services.values = ValueService(client, db, PriceService(client, "https://cg.test"), Decimal("60000"))
+        data = json.loads(
+            await mcp_server.money_value("3999", "USDT", "tron", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "2025-03-01T10:00:00")
+        )
+        assert data["usd_then"] == "3999" and Decimal(data["toman_then"]) == Decimal("239940000")
+        assert data["rate_source"] == "manual"
+    await db.close()

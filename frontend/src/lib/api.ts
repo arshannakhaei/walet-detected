@@ -353,10 +353,24 @@ export interface KeyStatus {
   etherscan_api_key: boolean
   coingecko_api_key: boolean
   solana_rpc_url: string
+  usd_toman_rate: string | null
   demo_mode: boolean
   tron_requests_per_second: number
   evm_requests_per_second: number
   can_edit: boolean
+}
+
+export interface Quote {
+  usd_then: string | null
+  usd_now: string | null
+  toman_rate_then: string | null
+  toman_rate_now: string | null
+}
+
+export interface TomanRate {
+  rate: string | null
+  source: 'manual' | 'nobitex' | 'wallex' | null
+  updated_at: string | null
 }
 
 export interface KeysIn {
@@ -364,6 +378,7 @@ export interface KeysIn {
   etherscan_api_key?: string
   coingecko_api_key?: string
   solana_rpc_url?: string
+  usd_toman_rate?: string
 }
 
 export interface LinkTransfer {
@@ -467,6 +482,9 @@ export const api = {
   settings: () => get<KeyStatus>('/api/settings'),
   saveKeys: (body: KeysIn) => request<KeyStatus>('PUT', '/api/settings/keys', body),
   health: () => get<Health>('/api/health'),
+  rates: () => get<TomanRate>('/api/prices/rates'),
+  quotes: (items: { chain: Chain; symbol: string; contract: string | null; day: string | null }[]) =>
+    request<Quote[]>('POST', '/api/prices/quotes', { items }),
   chains: () => get<ChainInfo[]>('/api/chains'),
   detect: (address: string) => get<{ address: string; chains: ChainInfo[] }>(`/api/detect/${enc(address)}`),
   activity: (address: string) =>

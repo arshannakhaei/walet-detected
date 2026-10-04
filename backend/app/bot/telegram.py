@@ -89,6 +89,21 @@ class TelegramBot:
             log.exception("telegram handler failed")
             await message.answer("⚠️ خطای داخلی. جزئیات در لاگ سرور.")
 
+    async def _values(self, items):
+        """fx values of (chain, symbol, contract, amount, time) items; None when unavailable."""
+        service = getattr(self._s, "values", None)
+        if service is None or not items:
+            return [None] * len(items)
+        try:
+            return await service.values(items)
+        except Exception:  # prices are a nice-to-have in messages
+            log.exception("value lookup failed")
+            return [None] * len(items)
+
+    async def _toman_rate(self):
+        service = getattr(self._s, "values", None)
+        return (await service.toman_now()).rate if service is not None else None
+
     # --- handlers -----------------------------------------------------------
 
     async def wallet(self, message: Message, args: list[str]) -> None:
@@ -100,7 +115,8 @@ class TelegramBot:
         risk = await self._s.risk.analyze(chain, address)
         cps = await self._s.wallets.counterparties(chain, address, TransferFilter())
         url = f"{self._public_url}/wallet/{chain.value}/{address}" if self._public_url else None
-        await self._reply(message, texts.overview_text(overview, risk, cps, self._s.labels, url))
+        rate = await self._toman_rate()
+        await self._reply(message, texts.overview_text(overview, risk, cps, self._s.labels, url, rate))
         await self.graph(message, [address, chain.value], announce=False)
 
     async def graph(self, message: Message, args: list[str], announce: bool = True) -> None:
@@ -143,7 +159,10 @@ class TelegramBot:
         start = await self._s.tracer.find_start(chain, address, args[1])
         params = TraceParams(direction=TraceDirection.BACKWARD if backward else TraceDirection.FORWARD)
         result = await self._s.tracer.trace(chain, start, params, amount)
-        await self._reply(message, texts.trace_text(result))
+        [value] = await self._values(
+            [(chain, result.token_symbol, result.token_contract, result.traced_amount, result.start.timestamp)]
+        )
+        await self._reply(message, texts.trace_text(result, value))
 
     async def watch(self, message: Message, args: list[str]) -> None:
         if not args:
@@ -184,7 +203,8 @@ class TelegramBot:
         await message.answer(f"⏳ در حال بررسی ارتباط بین {len(members)} کیف... (ممکن است چند دقیقه طول بکشد)")
         report = await self._s.links.analyzer.analyze(chain, members, LinkParams())
         url = f"{self._public_url}/links" if self._public_url else None
-        await self._reply(message, texts.links_text(report, url))
+        values = await self._values([(chain, d.token_symbol, d.token_contract, d.total, None) for d in report.direct[:15]])
+        await self._reply(message, texts.links_text(report, url, values))
 
     def _register(self) -> None:
         commands = {
@@ -229,7 +249,11 @@ class TelegramBot:
 
     async def notify(self, alert: Alert) -> None:
         if alert.telegram_chat_id:
-            await self.bot.send_message(alert.telegram_chat_id, texts.alert_text(alert))
+            [value] = await self._values(
+                # Alerts never include fake look-alike tokens (the monitor hides spam), so the symbol is enough.
+                [(alert.chain, alert.token_symbol, None, alert.amount, alert.timestamp)]
+            )
+            await self.bot.send_message(alert.telegram_chat_id, texts.alert_text(alert, value))
 
     def start(self) -> None:
         self._task = asyncio.create_task(self.dp.start_polling(self.bot, handle_signals=False))

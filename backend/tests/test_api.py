@@ -36,6 +36,10 @@ def mock_tron(trc20_items, trx_items):
         router.get("https://api.coingecko.com/api/v3/simple/price").mock(
             return_value=httpx.Response(200, json={"tron": {"usd": 0.25}})
         )
+        # Rate sources are unreachable in tests: values fall back to the manual rate or none.
+        for host in ("api.nobitex.ir", "api.wallex.ir", "api.binance.com"):
+            router.route(host=host).respond(503)
+        router.get(url__regex=r"https://api\.coingecko\.com/api/v3/coins/.*").respond(503)
         yield trc20_route
 
 
@@ -164,6 +168,21 @@ def test_csv_exports(client):
     assert lines[0].startswith("time_utc,tx_hash") and len(lines) == 6  # header + 5 successful
     cps = client.get(f"/api/wallet/{WALLET}/counterparties.csv").text
     assert ALICE in cps
+
+
+def test_csv_and_report_include_dollar_and_toman(client, tmp_path):
+    client.app.state.services.env_file = tmp_path / ".env"
+    client.put("/api/settings/keys", json={"usd_toman_rate": "60000"})
+    lines = client.get(f"/api/wallet/{WALLET}/transfers.csv").text.lstrip("\ufeff").strip().splitlines()
+    assert lines[0].endswith("usd_then,toman_then,usd_now,toman_now")
+    row = next(line for line in lines if "tx1" in line).split(",")  # 1000 USDT in from Alice
+    assert row[-4:] == ["1000.00", "60000000.00", "1000.00", "60000000.00"]
+    trx_row = next(line for line in lines if "tx5" in line).split(",")  # 50 TRX: no history in tests
+    assert trx_row[-4] == "" and trx_row[-2] == "12.50"
+    cps = client.get(f"/api/wallet/{WALLET}/counterparties.csv").text
+    assert "received_toman_now" in cps
+    html = client.get(f"/api/wallet/{WALLET}/report").text
+    assert "تومان" in html and "60,000" in html
 
 
 def test_wallet_report_html(client):

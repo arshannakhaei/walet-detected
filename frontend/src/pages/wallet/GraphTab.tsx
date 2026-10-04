@@ -10,6 +10,7 @@ import { api, type Chain, type Graph, type GraphEdge, type GraphNode, type Walle
 import { fmtAmount, fmtCompact, fmtNumber, shortAddr } from '../../lib/format'
 import { useLabelMap } from '../../lib/hooks'
 import { useI18n, type TKey } from '../../lib/i18n'
+import { Worth } from '../../lib/money'
 
 const RISKY = new Set(['mixer', 'sanctioned', 'scam'])
 const TERMINAL = new Set(['exchange', 'bridge', 'defi', 'service', 'token_contract'])
@@ -289,8 +290,11 @@ export function GraphTab({ chain, address, overview }: { chain: Chain; address: 
                         {incoming ? '← ' : '→ '}
                         {shortAddr(other)}
                       </button>
-                      <span className="tabular shrink-0 text-xs">
-                        {fmtAmount(e.amount, lang)} {e.token_symbol} <span className="text-muted">×{e.count}</span>
+                      <span className="flex shrink-0 flex-col items-end text-xs">
+                        <span className="tabular">
+                          {fmtAmount(e.amount, lang)} {e.token_symbol} <span className="text-muted">×{e.count}</span>
+                        </span>
+                        <Worth amount={e.amount} symbol={e.token_symbol} contract={e.token_contract} chain={chain} />
                       </span>
                     </li>
                   )

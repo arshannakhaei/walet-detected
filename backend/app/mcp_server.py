@@ -10,6 +10,7 @@ Outputs are trimmed to what an assistant needs; use the dashboard for full data.
 
 import functools
 import json
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -94,6 +95,11 @@ def _dump(value: Any) -> str:
     return json.dumps(value, default=default, ensure_ascii=False, indent=1)
 
 
+async def _toman_rate() -> Decimal | None:
+    values = getattr(_svc(), "values", None)
+    return (await values.toman_now()).rate if values is not None else None
+
+
 def _label(chain: Chain, address: str) -> str | None:
     label = _svc().labels.get(chain, address)
     return f"{label.name} [{label.category.value}]" if label else None
@@ -108,12 +114,16 @@ async def detect_address(address: str) -> str:
 
 @tool
 async def wallet_overview(address: str, chain: str | None = None) -> str:
-    """Balances (with USD), first/last activity, number of transfers and counterparties,
+    """Balances (with USD and toman), first/last activity, number of transfers and counterparties,
     and total in/out per token for a wallet."""
     c, a = _target(address, chain)
     o = await _svc().wallets.overview(c, a)
     data = o.model_dump()
     data["label"] = _label(c, a)
+    rate = await _toman_rate()
+    data["toman_per_usd_today"] = rate
+    if rate:
+        data["total_toman"] = o.total_usd * rate if o.total_usd is not None else None
     data["flows"] = data["flows"][:15]
     return _dump(data)
 
@@ -254,8 +264,12 @@ async def trace_funds(
         min_amount=Decimal(str(min_amount)),
     )
     r = await s.tracer.trace(c, start, params, Decimal(str(amount)) if amount else None)
+    value = None
+    if getattr(s, "values", None) is not None:
+        [value] = await s.values.values([(c, r.token_symbol, r.token_contract, r.traced_amount, r.start.timestamp)])
     return _dump(
         {
+            "traced_value": value.model_dump() if value else None,
             "start": {
                 "tx": r.start.tx_hash,
                 "from": r.start.from_address,
@@ -331,6 +345,20 @@ async def wallet_links(
         if "matched" in p:
             p["matched"] = p["matched"][:5]
     return _dump(data)
+
+
+@tool
+async def money_value(amount: str, token: str, chain: str = "tron", contract: str | None = None, time: str | None = None) -> str:
+    """Dollar and toman value of a token amount, at a given time (ISO date/time of the transfer)
+    and today. Toman uses the USDT/IRT market rate (Nobitex/Wallex) or the rate set by hand.
+    For tokens other than the native coin, pass the contract (fake look-alike tokens have no value)."""
+    when = datetime.fromisoformat(time.replace("Z", "+00:00")) if time else None
+    if when is not None and when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    s = _svc()
+    [v] = await s.values.values([(Chain(chain), token, contract, Decimal(amount), when)])
+    rate = await s.values.toman_now()
+    return _dump({**v.model_dump(), "toman_per_usd_today": rate.rate, "rate_source": rate.source})
 
 
 @tool

@@ -1,6 +1,7 @@
 """Risk analysis, activity timeline, CSV exports and printable wallet reports."""
 
 import csv
+from decimal import Decimal
 import io
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -61,6 +62,16 @@ def _csv(rows: list[list], header: list[str], filename: str) -> StreamingRespons
     )
 
 
+MONEY_HEADER = ["usd_then", "toman_then", "usd_now", "toman_now"]
+
+
+def _money_cells(v) -> list[str]:
+    def cell(x):
+        return "" if x is None else str(x.quantize(Decimal("0.01")))
+
+    return [cell(v.usd_then), cell(v.toman_then), cell(v.usd_now), cell(v.toman_now)]
+
+
 @router.get("/wallet/{address}/transfers.csv")
 async def transfers_csv(
     request: Request,
@@ -69,6 +80,9 @@ async def transfers_csv(
 ):
     wallets: WalletService = request.app.state.wallet_service
     items, _ = await call(wallets.transfers(t.chain, t.address, normalized_filter(flt, t.chain), 100_000, 0))
+    values = await request.app.state.services.values.values(
+        [(t.chain, v.transfer.token_symbol, v.transfer.token_contract, v.transfer.amount, v.transfer.timestamp) for v in items]
+    )
     rows = [
         [
             v.transfer.timestamp.isoformat(),
@@ -80,10 +94,14 @@ async def transfers_csv(
             v.transfer.token_symbol,
             v.transfer.token_contract or "",
             "ok" if v.transfer.success else "failed",
+            *_money_cells(value),
         ]
-        for v in items
+        for v, value in zip(items, values)
     ]
-    header = ["time_utc", "tx_hash", "direction", "from", "to", "amount", "token", "token_contract", "status"]
+    header = [
+        "time_utc", "tx_hash", "direction", "from", "to", "amount", "token", "token_contract", "status",
+        *MONEY_HEADER,
+    ]
     return _csv(rows, header, f"{t.chain.value}_{t.address[:12]}_transfers.csv")
 
 
@@ -96,8 +114,12 @@ async def counterparties_csv(
     wallets: WalletService = request.app.state.wallet_service
     labels = request.app.state.labels
     cps = await call(wallets.counterparties(t.chain, t.address, normalized_filter(flt, t.chain)))
+    values = await request.app.state.services.values.values(
+        [(t.chain, c.token_symbol, c.token_contract, amount, None) for c in cps for amount in (c.received_from, c.sent_to)]
+    )
     rows = []
-    for c in cps:
+    for i, c in enumerate(cps):
+        got, sent = values[2 * i], values[2 * i + 1]
         label = labels.get(t.chain, c.address)
         rows.append(
             [
@@ -111,11 +133,14 @@ async def counterparties_csv(
                 c.count_out,
                 c.first_seen.isoformat(),
                 c.last_seen.isoformat(),
+                *_money_cells(got)[2:],
+                *_money_cells(sent)[2:],
             ]
         )
     header = [
         "address", "label", "category", "token", "received_from", "count_in",
         "sent_to", "count_out", "first_seen", "last_seen",
+        "received_usd_now", "received_toman_now", "sent_usd_now", "sent_toman_now",
     ]
     return _csv(rows, header, f"{t.chain.value}_{t.address[:12]}_counterparties.csv")
 
@@ -132,7 +157,8 @@ async def render_wallet(request: Request, t: Target, lang: str) -> str:
         for a in [t.address] + [c.address for c in cps[:15]]
         if labels.get(t.chain, a)
     }
-    return report.wallet_section(lang, overview, risk_report, cps, names)
+    rate = (await request.app.state.services.values.toman_now()).rate
+    return report.wallet_section(lang, overview, risk_report, cps, names, rate)
 
 
 @router.get("/wallet/{address}/report", response_class=HTMLResponse)

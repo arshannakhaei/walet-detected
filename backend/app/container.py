@@ -9,6 +9,7 @@ from app.config import ENV_FILE, Settings
 from app.db import Database
 from app.providers import ProviderRegistry
 from app.services.cases import CaseService
+from app.services.fx import ValueService
 from app.services.graph import GraphBuilder
 from app.services.labels import LabelService
 from app.services.links import LinkAnalyzer, LinkJobs
@@ -26,6 +27,7 @@ class Services:
     client: httpx.AsyncClient
     providers: ProviderRegistry
     prices: PriceService
+    values: ValueService
     wallets: WalletService
     labels: LabelService
     graphs: GraphBuilder
@@ -53,6 +55,15 @@ async def create_services(settings: Settings) -> Services:
     client = httpx.AsyncClient(timeout=settings.http_timeout_seconds)
     providers = ProviderRegistry(settings, client)
     prices = PriceService(client, settings.coingecko_base_url, settings.coingecko_api_key)
+    values = ValueService(
+        client,
+        db,
+        prices,
+        settings.usd_toman_rate,
+        nobitex_url=settings.nobitex_base_url,
+        wallex_url=settings.wallex_base_url,
+        binance_url=settings.binance_base_url,
+    )
     wallets = WalletService(db, providers, settings.max_transfers_per_address, settings.cache_ttl_seconds, prices)
     labels = LabelService(db)
     await labels.load()
@@ -63,6 +74,7 @@ async def create_services(settings: Settings) -> Services:
         client=client,
         providers=providers,
         prices=prices,
+        values=values,
         wallets=wallets,
         labels=labels,
         graphs=graphs,

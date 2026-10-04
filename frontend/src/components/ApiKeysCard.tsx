@@ -6,14 +6,16 @@ import { fmtNumber } from '../lib/format'
 import { useI18n, type TKey } from '../lib/i18n'
 import { Button, Card, ErrorBox, Field, Input, Spinner } from './ui'
 
-const FIELDS: { name: keyof KeysIn; label: TKey; url: string; secret: boolean }[] = [
+type KeyField = Exclude<keyof KeysIn, 'usd_toman_rate'>
+
+const FIELDS: { name: KeyField; label: TKey; url: string; secret: boolean }[] = [
   { name: 'trongrid_api_key', label: 'key_trongrid', url: 'https://www.trongrid.io/register', secret: true },
   { name: 'etherscan_api_key', label: 'key_etherscan', url: 'https://etherscan.io/apis', secret: true },
   { name: 'coingecko_api_key', label: 'key_coingecko', url: 'https://www.coingecko.com/en/api', secret: true },
   { name: 'solana_rpc_url', label: 'key_solana', url: 'https://www.helius.dev', secret: false },
 ]
 
-function isSet(status: KeyStatus, name: keyof KeysIn): boolean {
+function isSet(status: KeyStatus, name: KeyField): boolean {
   return name === 'solana_rpc_url' ? !status.solana_rpc_url.includes('api.mainnet-beta.solana.com') : status[name]
 }
 

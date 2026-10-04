@@ -5,9 +5,27 @@ import { RiskBadge, SeverityBadge } from '../../components/badges'
 import { TimelineChart } from '../../components/TimelineChart'
 import { Badge, Button, Card, Empty, Segmented, Select, Spinner, Stat, TableWrap, td, th } from '../../components/ui'
 import { api, type RiskReport, type WalletOverview } from '../../lib/api'
-import { fmtAmount, fmtDate, fmtNumber, fmtUsd } from '../../lib/format'
+import { fmtAmount, fmtDate, fmtNumber } from '../../lib/format'
 import { FINDING_TITLES_FA } from '../../lib/findings'
 import { useI18n } from '../../lib/i18n'
+import { fmtDollar, fmtToman, useCurrency, Worth } from '../../lib/money'
+
+/** Today's total in the chosen currency (dollars from the server, toman at today's rate). */
+function TotalValue({ usd }: { usd: string | null }) {
+  const { t, lang } = useI18n()
+  const { mode } = useCurrency()
+  const rate = useQuery({ queryKey: ['toman-rate'], queryFn: api.rates, staleTime: 5 * 60_000, enabled: mode !== 'token' && mode !== 'usd' })
+  const dollars = usd !== null ? Number(usd) : null
+  const toman = dollars !== null && rate.data?.rate ? dollars * Number(rate.data.rate) : null
+  const main = mode === 'toman' ? (toman !== null ? fmtToman(toman, lang) : '—') : dollars !== null ? fmtDollar(dollars, lang) : '—'
+  return (
+    <Stat
+      label={t('total_value')}
+      value={main}
+      sub={mode === 'all' && toman !== null ? fmtToman(toman, lang) : undefined}
+    />
+  )
+}
 
 export function OverviewTab({
   overview: o,
@@ -41,7 +59,7 @@ export function OverviewTab({
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={t('total_value')} value={o.total_usd !== null ? fmtUsd(o.total_usd, lang) : '—'} />
+        <TotalValue usd={o.total_usd} />
         <Stat label={t('transfers_count')} value={fmtNumber(o.transfer_count, lang)} />
         <Stat label={t('counterparties_count')} value={fmtNumber(o.counterparty_count, lang)} />
         <Stat
@@ -65,7 +83,7 @@ export function OverviewTab({
                   </span>
                   <span className="text-end">
                     <div className="tabular font-bold">{fmtAmount(b.amount, lang)}</div>
-                    {b.usd_value !== null && <div className="text-xs text-muted">{fmtUsd(b.usd_value, lang)}</div>}
+                    <Worth amount={b.amount} symbol={b.token_symbol} contract={b.token_contract} chain={o.chain} className="block" />
                   </span>
                 </li>
               ))}
@@ -163,11 +181,11 @@ export function OverviewTab({
                   <td className={`${td} font-medium`}>{f.token_symbol}</td>
                   <td className={`${td} tabular`}>
                     {fmtAmount(f.total_in, lang)} <span className="text-muted">({fmtNumber(f.count_in, lang)})</span>
-                    {f.usd_in !== null && <div className="text-xs text-muted">{fmtUsd(f.usd_in, lang)}</div>}
+                    <Worth amount={f.total_in} symbol={f.token_symbol} contract={f.token_contract} chain={o.chain} className="block" />
                   </td>
                   <td className={`${td} tabular`}>
                     {fmtAmount(f.total_out, lang)} <span className="text-muted">({fmtNumber(f.count_out, lang)})</span>
-                    {f.usd_out !== null && <div className="text-xs text-muted">{fmtUsd(f.usd_out, lang)}</div>}
+                    <Worth amount={f.total_out} symbol={f.token_symbol} contract={f.token_contract} chain={o.chain} className="block" />
                   </td>
                 </tr>
               ))}

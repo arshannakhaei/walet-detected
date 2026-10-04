@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ApiError } from './lib/api'
 import { I18nProvider } from './lib/i18n'
+import { CurrencyProvider } from './lib/money'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -23,7 +24,9 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <I18nProvider>
-          <App />
+          <CurrencyProvider>
+            <App />
+          </CurrencyProvider>
         </I18nProvider>
       </BrowserRouter>
     </QueryClientProvider>

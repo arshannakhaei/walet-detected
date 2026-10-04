@@ -1,5 +1,8 @@
 """Investigation cases."""
 
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -117,4 +120,17 @@ async def case_report(case_id: int, request: Request, lang: str = Query("fa", pa
                 )
             except HTTPException as exc:  # keep the report usable if one chain API is down
                 sections[(item.chain, item.address)] = f"<p class='muted'>⚠ {exc.detail}</p>"
-    return report.case_report(lang, case, sections)
+    traces = [i for i in case.items if i.kind == ItemKind.TRACE and i.data]
+    values = await request.app.state.services.values.values(
+        [
+            (
+                Chain(i.data["chain"]),
+                i.data.get("token_symbol", ""),
+                i.data.get("token_contract"),
+                Decimal(str(i.data.get("traced_amount", 0))),
+                datetime.fromisoformat(i.data["start"]["timestamp"].replace("Z", "+00:00")),
+            )
+            for i in traces
+        ]
+    )
+    return report.case_report(lang, case, sections, {i.id: v for i, v in zip(traces, values)})

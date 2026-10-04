@@ -9,6 +9,7 @@ import { api, type Chain, type Label, type LinkReport, type LinksRequest } from 
 import { fmtAmount, fmtCompact, fmtDate, fmtNumber, shortAddr } from '../lib/format'
 import { useLabelMap } from '../lib/hooks'
 import { useI18n, type TKey } from '../lib/i18n'
+import { Money, Worth } from '../lib/money'
 import { readJson, writeJson } from '../lib/storage'
 
 const RISKY = new Set(['mixer', 'sanctioned', 'scam'])
@@ -42,7 +43,7 @@ function useNamer(report: LinkReport | undefined) {
 }
 
 function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey) => string, lang: 'fa' | 'en') {
-  const out: { text: Part[]; tone: 'strong' | 'normal' | 'weak'; tx?: string }[] = []
+  const out: { text: Part[]; tone: 'strong' | 'normal' | 'weak'; tx?: string; money?: { amount: string; symbol: string; contract: string | null; at?: string } }[] = []
   for (const d of r.direct) {
     for (const tr of d.transfers.slice(0, 3)) {
       out.push({
@@ -55,6 +56,7 @@ function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey)
         }),
         tone: 'strong',
         tx: tr.tx_hash,
+        money: { amount: tr.amount, symbol: d.token_symbol, contract: d.token_contract, at: tr.timestamp },
       })
     }
   }
@@ -73,6 +75,7 @@ function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey)
           }),
           tone: 'strong',
           tx: m.outgoing.tx_hash,
+          money: { amount: m.incoming.amount, symbol: p.token_symbol, contract: p.token_contract, at: m.incoming.timestamp },
         })
       }
     } else if (p.via.length === 1) {
@@ -86,6 +89,7 @@ function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey)
           to: name(p.to_address),
         }),
         tone: 'normal',
+        money: { amount: p.amount_out, symbol: p.token_symbol, contract: p.token_contract },
       })
     } else {
       out.push({
@@ -394,6 +398,7 @@ function Results({ report: r }: { report: LinkReport }) {
                       ),
                     )}
                   </span>
+                  {s.money && <Worth {...s.money} chain={r.chain} />}
                   {s.tx && <TxLink hash={s.tx} chain={r.chain} />}
                 </li>
               ))}
@@ -472,8 +477,12 @@ function Results({ report: r }: { report: LinkReport }) {
                   {m.group ? <Badge tone="accent">{`${t('links_group')} ${fmtNumber(m.group, lang)}`}</Badge> : <span className="text-xs text-muted">{t('links_no_group')}</span>}
                 </td>
                 <td className={`${td} tabular`}>{fmtNumber(m.linked_members, lang)}</td>
-                <td className={`${td} tabular`}>{Number(m.sent_to_members) ? fmtAmount(m.sent_to_members, lang) : '—'}</td>
-                <td className={`${td} tabular`}>{Number(m.received_from_members) ? fmtAmount(m.received_from_members, lang) : '—'}</td>
+                <td className={`${td} tabular`}>
+                  {Number(m.sent_to_members) ? <Money amount={m.sent_to_members} symbol={r.token ?? ''} chain={r.chain} showSymbol={false} /> : '—'}
+                </td>
+                <td className={`${td} tabular`}>
+                  {Number(m.received_from_members) ? <Money amount={m.received_from_members} symbol={r.token ?? ''} chain={r.chain} showSymbol={false} /> : '—'}
+                </td>
                 <td className={`${td} tabular`}>
                   {fmtNumber(m.transfer_count, lang)} {m.truncated && <Badge tone="warning">{t('links_cut')}</Badge>}
                 </td>
@@ -500,9 +509,7 @@ function Results({ report: r }: { report: LinkReport }) {
                     <FromTo from={d.from_address} to={d.to_address} chain={r.chain} name={name} labelOf={labelOf} />
                   </td>
                   <td className={`${td} tabular`}>
-                    <b>
-                      {fmtAmount(d.total, lang)} {d.token_symbol}
-                    </b>
+                    <Money amount={d.total} symbol={d.token_symbol} contract={d.token_contract} chain={r.chain} strong />
                     <div className="text-xs text-muted">
                       {fmtNumber(d.count, lang)} {t('links_transfers')} · {fmtDate(d.first_seen, lang, false)}
                       {d.first_seen.slice(0, 10) !== d.last_seen.slice(0, 10) && ` – ${fmtDate(d.last_seen, lang, false)}`}
@@ -512,7 +519,7 @@ function Results({ report: r }: { report: LinkReport }) {
                     <div className="flex flex-col gap-1">
                       {d.transfers.slice(0, open[`d${d.from_address}${d.to_address}`] ? 50 : 3).map((tr) => (
                         <span key={tr.tx_hash} className="flex flex-wrap items-center gap-x-2 text-xs">
-                          <span className="tabular font-medium">{fmtAmount(tr.amount, lang)}</span>
+                          <Money amount={tr.amount} symbol={d.token_symbol} contract={d.token_contract} chain={r.chain} at={tr.timestamp} showSymbol={false} />
                           <TxLink hash={tr.tx_hash} chain={r.chain} />
                           <span className="text-muted">{fmtDate(tr.timestamp, lang)}</span>
                         </span>
@@ -559,10 +566,10 @@ function Results({ report: r }: { report: LinkReport }) {
                   </td>
                   <td className={`${td} tabular text-xs`}>
                     <div>
-                      ↓ {fmtAmount(p.amount_in, lang)} {p.token_symbol}
+                      ↓ <Money amount={p.amount_in} symbol={p.token_symbol} contract={p.token_contract} chain={r.chain} />
                     </div>
                     <div>
-                      ↓ {fmtAmount(p.amount_out, lang)} {p.token_symbol}
+                      ↓ <Money amount={p.amount_out} symbol={p.token_symbol} contract={p.token_contract} chain={r.chain} />
                     </div>
                   </td>
                   <td className={td}>

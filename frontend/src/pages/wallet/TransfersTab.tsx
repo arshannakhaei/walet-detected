@@ -6,8 +6,9 @@ import { Address, TxLink } from '../../components/Address'
 import { FilterBar } from '../../components/FilterBar'
 import { Badge, Button, Card, Empty, ErrorBox, Spinner, TableWrap, td, th } from '../../components/ui'
 import { api, walletPath, type Chain, type Label, type TransferFilters, type WalletOverview } from '../../lib/api'
-import { fmtAmount, fmtDate, fmtNumber } from '../../lib/format'
+import { fmtDate, fmtNumber } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
+import { Money } from '../../lib/money'
 
 const PAGE = 50
 
@@ -98,7 +99,7 @@ export function TransfersTab({
                       <Address address={counterparty} chain={chain} label={labels.get(counterparty)} />
                     </td>
                     <td className={`${td} whitespace-nowrap`}>
-                      <span className="tabular font-bold">{fmtAmount(tr.amount, lang)}</span> <span className="text-ink-2">{tr.token_symbol}</span>
+                      <Money amount={tr.amount} symbol={tr.token_symbol} contract={tr.token_contract} chain={chain} at={tr.timestamp} strong />
                       {!tr.success && (
                         <Badge tone="critical" className="ms-1">
                           {t('failed')}

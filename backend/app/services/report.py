@@ -22,6 +22,10 @@ T = {
         "address": "آدرس",
         "balances": "موجودی",
         "flows": "ورودی / خروجی",
+        "toman": "تومان",
+        "value_then": "ارزش در زمان تراکنش",
+        "value_now": "ارزش امروز",
+        "rate": "نرخ دلار",
         "token": "توکن",
         "in": "ورودی",
         "out": "خروجی",
@@ -57,6 +61,10 @@ T = {
         "address": "Address",
         "balances": "Balances",
         "flows": "In / out",
+        "toman": "Toman",
+        "value_then": "Value at transfer time",
+        "value_now": "Value today",
+        "rate": "Dollar rate",
         "token": "Token",
         "in": "In",
         "out": "Out",
@@ -106,6 +114,16 @@ def _num(value: Decimal | None) -> str:
     return f"{q:,}"
 
 
+def _money(usd: Decimal | None, toman: Decimal | None, t: dict) -> str:
+    """"$1,234.00 · 74,040,000 تومان" (whatever is known), or an empty string."""
+    parts = []
+    if usd is not None:
+        parts.append(f"${_num(usd)}")
+    if toman is not None:
+        parts.append(f"{toman.quantize(Decimal(1)):,} {t['toman']}")
+    return " · ".join(parts)
+
+
 def _date(value) -> str:
     if value is None:
         return "—"
@@ -124,9 +142,15 @@ def wallet_section(
     risk: RiskReport | None,
     counterparties: list[Counterparty],
     labels: dict[str, str] | None = None,
+    toman_rate: Decimal | None = None,
 ) -> str:
+    """`toman_rate` (toman per dollar today) adds toman values next to the dollar ones."""
     t = T[lang]
     labels = labels or {}
+
+    def toman(usd: Decimal | None) -> Decimal | None:
+        return usd * toman_rate if usd is not None and toman_rate else None
+
     parts = [
         f"<div class='box'><div>{t['chain']}: <b>{escape(overview.chain.value)}</b></div>",
         f"<div>{t['address']}: {_mono(overview.address)}"
@@ -135,20 +159,34 @@ def wallet_section(
         f"<div>{t['first_seen']}: {_date(overview.first_seen)} · {t['last_seen']}: {_date(overview.last_seen)}"
         f" · {t['transfers']}: {overview.transfer_count}</div>",
     ]
+    if overview.total_usd is not None:
+        parts.append(f"<div>{t['value_now']}: <b>{_money(overview.total_usd, toman(overview.total_usd), t)}</b></div>")
+    if toman_rate:
+        parts.append(f"<div class='muted'>{t['rate']}: {toman_rate.quantize(Decimal(1)):,} {t['toman']}</div>")
     if overview.truncated:
         parts.append(f"<div class='muted'>⚠ {t['truncated']}</div>")
     parts.append("</div>")
 
-    parts.append(f"<h3>{t['balances']}</h3><table><tr><th>{t['token']}</th><th>{t['amount']}</th><th>USD</th></tr>")
+    parts.append(
+        f"<h3>{t['balances']}</h3><table><tr><th>{t['token']}</th><th>{t['amount']}</th>"
+        f"<th>USD</th><th>{t['toman']}</th></tr>"
+    )
     for b in overview.balances:
-        parts.append(f"<tr><td>{escape(b.token_symbol)}</td><td>{_num(b.amount)}</td><td>{_num(b.usd_value)}</td></tr>")
+        tmn = toman(b.usd_value)
+        parts.append(
+            f"<tr><td>{escape(b.token_symbol)}</td><td>{_num(b.amount)}</td><td>{_num(b.usd_value)}</td>"
+            f"<td>{f'{tmn.quantize(Decimal(1)):,}' if tmn is not None else '—'}</td></tr>"
+        )
     parts.append("</table>")
 
     parts.append(f"<h3>{t['flows']}</h3><table><tr><th>{t['token']}</th><th>{t['in']}</th><th>{t['out']}</th></tr>")
     for f in overview.flows[:15]:
+        money_in, money_out = _money(f.usd_in, toman(f.usd_in), t), _money(f.usd_out, toman(f.usd_out), t)
         parts.append(
-            f"<tr><td>{escape(f.token_symbol)}</td><td>{_num(f.total_in)} ({f.count_in})</td>"
-            f"<td>{_num(f.total_out)} ({f.count_out})</td></tr>"
+            f"<tr><td>{escape(f.token_symbol)}</td><td>{_num(f.total_in)} ({f.count_in})"
+            f"{f'<br><span class=muted>{money_in}</span>' if money_in else ''}</td>"
+            f"<td>{_num(f.total_out)} ({f.count_out})"
+            f"{f'<br><span class=muted>{money_out}</span>' if money_out else ''}</td></tr>"
         )
     parts.append("</table>")
 
@@ -183,13 +221,24 @@ def wallet_section(
     return "".join(parts)
 
 
-def trace_section(lang: str, title: str, data: dict) -> str:
+def trace_section(lang: str, title: str, data: dict, value=None) -> str:
+    """`value` (fx.Value of the traced amount) adds its dollar and toman worth."""
     t = T[lang]
     start = data.get("start") or {}
+    worth = ""
+    if value is not None:
+        then = _money(value.usd_then, value.toman_then, t)
+        now = _money(value.usd_now, value.toman_now, t)
+        worth = "".join(
+            f"<span class='muted'>{label}: {text}</span><br>"
+            for label, text in ((t["value_then"], then), (t["value_now"], now))
+            if text
+        )
     parts = [
         f"<div class='box'><b>{escape(title or t['trace'])}</b> — {escape(data.get('direction', ''))}, "
         f"{escape(data.get('method', ''))}<br>",
         f"{t['traced']}: <b>{_num(Decimal(str(data.get('traced_amount', 0))))} {escape(data.get('token_symbol', ''))}</b><br>",
+        worth,
         f"tx: {_mono(start.get('tx_hash'))}<br>{t['from']}: {_mono(start.get('from_address'))} → "
         f"{t['to']}: {_mono(start.get('to_address'))}</div>",
         f"<h3>{t['endpoints']}</h3><table><tr><th>{t['address']}</th><th>{t['reason']}</th>"
@@ -230,8 +279,12 @@ def page(lang: str, title: str, body: str) -> str:
     )
 
 
-def case_report(lang: str, case: Case, wallets: dict[tuple[Chain, str], str]) -> str:
-    """`wallets` maps each address item to its already-rendered wallet section."""
+def case_report(
+    lang: str, case: Case, wallets: dict[tuple[Chain, str], str], trace_values: dict[int, object] | None = None
+) -> str:
+    """`wallets` maps each address item to its already-rendered wallet section;
+    `trace_values` maps trace item ids to the value of the traced amount."""
+    trace_values = trace_values or {}
     t = T[lang]
     body = []
     if case.description:
@@ -252,5 +305,5 @@ def case_report(lang: str, case: Case, wallets: dict[tuple[Chain, str], str]) ->
             body.append(f"<h2>{t['trace']}</h2>")
             if item.note:
                 body.append(f"<p>{escape(item.note)}</p>")
-            body.append(trace_section(lang, item.title, item.data))
+            body.append(trace_section(lang, item.title, item.data, trace_values.get(item.id)))
     return page(lang, f"{t['report']}: {case.title}", "".join(body))

@@ -1,6 +1,7 @@
 import { CheckCircle2, ExternalLink, XCircle } from 'lucide-react'
 import { CopyButton } from '../components/Address'
 import { ApiKeysCard } from '../components/ApiKeysCard'
+import { RateCard } from '../components/RateCard'
 import { Card, Segmented, Spinner } from '../components/ui'
 import { CHAINS } from '../lib/chains'
 import { useChains } from '../lib/hooks'
@@ -43,6 +44,8 @@ export function Settings() {
           </div>
         </div>
       </Card>
+
+      <RateCard />
 
       <ApiKeysCard />
 

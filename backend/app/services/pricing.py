@@ -39,6 +39,14 @@ class PriceService:
         self._prices: dict[str, Decimal] = {}
         self._fetched_at = 0.0
 
+    @property
+    def base_url(self) -> str:
+        return self._base
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return self._headers
+
     def set_api_key(self, api_key: str) -> None:
         self._headers = {"x-cg-demo-api-key": api_key} if api_key else {}
         self._fetched_at = 0.0

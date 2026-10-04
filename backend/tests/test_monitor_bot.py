@@ -148,3 +148,31 @@ def test_bot_and_dashboard_share_finding_titles():
 
     ts = (Path(__file__).resolve().parents[2] / "frontend/src/lib/findings.ts").read_text()
     assert dict(re.findall(r"  (\w+): '([^']+)'", ts)) == texts.FINDING_FA
+
+
+def test_money_in_bot_texts():
+    from app.services.fx import Value
+
+    assert texts.money(Decimal("3999"), Decimal("239940000")) == " (≈ $3,999.00 · 239,940,000 تومان)"
+    assert texts.money(None, None) == ""
+    assert texts.money_plain(Decimal("2.5")) == "$2.50"
+
+
+async def test_bot_trace_shows_value_when_available(env):
+    from app.services.fx import Value
+
+    bot = await _bot(env)
+
+    class FakeValues:
+        async def values(self, items):
+            return [Value(usd_then=Decimal(1000), toman_then=Decimal(60_000_000), usd_now=Decimal(1000)) for _ in items]
+
+        async def toman_now(self):
+            return SimpleNamespace(rate=Decimal(70000))
+
+    bot._s.values = FakeValues()
+    msg = FakeMessage()
+    await bot._guard(msg, lambda: bot.trace(msg, [VICTIM, "s1"]))
+    assert "ارزش در زمان تراکنش: $1,000.00 · 60,000,000 تومان" in msg.sent[-1]
+    await bot._guard(msg, lambda: bot.wallet(msg, [SCAMMER]))
+    assert SCAMMER in msg.sent[-1]

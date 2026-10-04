@@ -8,6 +8,7 @@ import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Spinner, Textarea }
 import { api, type CaseItem } from '../lib/api'
 import { fmtAmount, fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { Worth } from '../lib/money'
 
 export function CaseDetail() {
   const id = Number(useParams().id)
@@ -191,6 +192,7 @@ export function CaseDetail() {
                         <span className="text-ink-2">
                           {fmtAmount(d.traced_amount, lang)} {d.token_symbol} → {d.endpoints.length} {t('endpoints')}
                         </span>
+                        <Worth amount={d.traced_amount} symbol={d.token_symbol} contract={d.token_contract} chain={d.chain} at={d.start.timestamp} />
                         <Link
                           to={`/trace?chain=${d.chain}&address=${encodeURIComponent(d.start.from_address)}&tx=${encodeURIComponent(d.start.tx_hash)}&direction=${d.direction}`}
                           className="text-xs text-accent hover:underline"

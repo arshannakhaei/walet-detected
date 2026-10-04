@@ -8,6 +8,7 @@ import { Button, Card, Empty, ErrorBox, Field, Input, Spinner } from '../compone
 import { api } from '../lib/api'
 import { fmtAmount, fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { Worth } from '../lib/money'
 
 export function Watchlist() {
   const { t, lang } = useI18n()
@@ -139,6 +140,7 @@ export function Watchlist() {
                       {fmtAmount(a.amount, lang)} {a.token_symbol}
                       {a.watch_name && <span className="font-normal text-ink-2">· {a.watch_name}</span>}
                     </span>
+                    <Worth amount={a.amount} symbol={a.token_symbol} chain={a.chain} at={a.timestamp} />
                     <span className="text-xs text-muted">{fmtDate(a.timestamp, lang)}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs">

@@ -7,8 +7,9 @@ import { LabelDialog } from '../../components/dialogs'
 import { FilterBar } from '../../components/FilterBar'
 import { Card, Empty, ErrorBox, Input, Spinner, TableWrap, td, th } from '../../components/ui'
 import { api, walletPath, type Chain, type Label, type TransferFilters, type WalletOverview } from '../../lib/api'
-import { fmtAmount, fmtDate, fmtNumber } from '../../lib/format'
+import { fmtDate, fmtNumber } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
+import { Money } from '../../lib/money'
 
 type SortKey = 'total' | 'received' | 'sent' | 'count' | 'last'
 
@@ -106,8 +107,12 @@ export function CounterpartiesTab({
                     <Address address={c.address} chain={chain} label={labels.get(c.address)} />
                   </td>
                   <td className={td}>{c.token_symbol}</td>
-                  <td className={`${td} tabular`}>{Number(c.received_from) ? fmtAmount(c.received_from, lang) : '—'}</td>
-                  <td className={`${td} tabular`}>{Number(c.sent_to) ? fmtAmount(c.sent_to, lang) : '—'}</td>
+                  <td className={`${td} tabular`}>
+                    {Number(c.received_from) ? <Money amount={c.received_from} symbol={c.token_symbol} contract={c.token_contract} chain={chain} showSymbol={false} /> : '—'}
+                  </td>
+                  <td className={`${td} tabular`}>
+                    {Number(c.sent_to) ? <Money amount={c.sent_to} symbol={c.token_symbol} contract={c.token_contract} chain={chain} showSymbol={false} /> : '—'}
+                  </td>
                   <td className={`${td} tabular text-ink-2`}>
                     ↓{fmtNumber(c.count_in, lang)} ↑{fmtNumber(c.count_out, lang)}
                   </td>

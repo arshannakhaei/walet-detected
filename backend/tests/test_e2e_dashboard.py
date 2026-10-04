@@ -49,6 +49,11 @@ def server(tmp_path_factory):
         "MONITOR_INTERVAL_SECONDS": "0",
         "DATABASE_URL": f"sqlite+aiosqlite:///{db}",
         "TELEGRAM_BOT_TOKEN": "",
+        "USD_TOMAN_RATE": "60000",
+        # No internet in CI: point the rate sources at a closed port so they fail fast.
+        "NOBITEX_BASE_URL": "http://127.0.0.1:9",
+        "WALLEX_BASE_URL": "http://127.0.0.1:9",
+        "BINANCE_BASE_URL": "http://127.0.0.1:9",
     }
     proc = subprocess.Popen([sys.executable, "run.py", "--no-browser"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     base = f"http://127.0.0.1:{port}"
@@ -170,6 +175,23 @@ def test_links_between_wallets(server, page):
     # Reloading keeps the finished analysis.
     page.reload()
     page.get_by_text("Findings").wait_for()
+
+
+def test_dollar_and_toman_values(server, page):
+    base, demo = server
+    page.goto(f"{base}/wallet/tron/{demo['scammer']}?tab=transfers")
+    # 5,000 USDT at 60,000 toman per dollar.
+    page.get_by_text("≈ $5,000 · 300 M T").first.wait_for()
+    page.get_by_label("Show amounts in").select_option("toman")
+    page.get_by_text("≈ 300 M T").first.wait_for()
+    page.get_by_label("Show amounts in").select_option("token")
+    page.wait_for_timeout(300)
+    assert page.get_by_text("300 M T").count() == 0
+
+    page.get_by_label("Show amounts in").select_option("all")
+    page.goto(f"{base}/settings")
+    page.get_by_text("60,000 T").wait_for()
+    page.get_by_text("Manual rate", exact=True).wait_for()
 
 
 def test_mobile_layout_has_no_horizontal_scroll(server, page):

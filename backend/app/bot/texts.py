@@ -65,6 +65,22 @@ def num(value: Decimal | None) -> str:
     return f"{value.normalize():f}"
 
 
+def money_plain(usd: Decimal | None, toman: Decimal | None = None) -> str:
+    """"$1,234.00 · 74,040,000 تومان" for whatever is known, else ""."""
+    parts = []
+    if usd is not None:
+        parts.append(f"${num(usd)}")
+    if toman is not None:
+        parts.append(f"{toman.quantize(Decimal(1)):,} تومان")
+    return " · ".join(parts)
+
+
+def money(usd: Decimal | None, toman: Decimal | None = None) -> str:
+    """" (≈ $1,234.00 · 74,040,000 تومان)", or "" when nothing is known."""
+    text = money_plain(usd, toman)
+    return f" (≈ {text})" if text else ""
+
+
 def code(address: str) -> str:
     return f"<code>{escape(address)}</code>"
 
@@ -75,15 +91,20 @@ def overview_text(
     cps: list[Counterparty],
     labels: LabelService,
     dashboard_url: str | None = None,
+    toman_rate: Decimal | None = None,
 ) -> str:
+    def toman(usd: Decimal | None) -> Decimal | None:
+        return usd * toman_rate if usd is not None and toman_rate else None
+
     lines = [f"<b>{o.chain.value.upper()}</b> {code(o.address)}"]
     own = labels.get(o.chain, o.address)
     if own:
         lines.append(f"🏷 {escape(own.name)} ({own.category.value})")
     if o.total_usd is not None:
-        lines.append(f"💰 ارزش کل: <b>${num(o.total_usd)}</b>")
+        tmn = toman(o.total_usd)
+        lines.append(f"💰 ارزش کل: <b>${num(o.total_usd)}</b>" + (f" · <b>{tmn.quantize(Decimal(1)):,} تومان</b>" if tmn else ""))
     for b in o.balances[:6]:
-        lines.append(f"  • {num(b.amount)} {escape(b.token_symbol)}")
+        lines.append(f"  • {num(b.amount)} {escape(b.token_symbol)}{money(b.usd_value, toman(b.usd_value))}")
     first = o.first_seen.strftime("%Y-%m-%d") if o.first_seen else "—"
     last = o.last_seen.strftime("%Y-%m-%d") if o.last_seen else "—"
     lines.append(f"📅 {first} ← → {last} · {o.transfer_count} انتقال · {o.counterparty_count} طرف‌حساب")
@@ -128,10 +149,17 @@ def risk_text(r: RiskReport) -> str:
     return "\n".join(lines)
 
 
-def trace_text(t: TraceResult) -> str:
+def trace_text(t: TraceResult, value=None) -> str:
+    """`value`: fx.Value of the traced amount (worth at the transfer time and today)."""
     direction = "کجا رفت" if t.direction.value == "forward" else "از کجا آمد"
+    worth = ""
+    if value is not None:
+        then, now = money_plain(value.usd_then, value.toman_then), money_plain(value.usd_now, value.toman_now)
+        worth = "".join(
+            f"\n{label}: {text}" for label, text in (("💵 ارزش در زمان تراکنش", then), ("💵 ارزش امروز", now)) if text
+        )
     lines = [
-        f"🔎 ردیابی ({direction}) {num(t.traced_amount)} {escape(t.token_symbol)}",
+        f"🔎 ردیابی ({direction}) {num(t.traced_amount)} {escape(t.token_symbol)}{worth}",
         f"tx: {code(t.start.tx_hash)}",
         f"{len(t.flows)} انتقال در مسیر\n",
         "<b>نتیجه:</b>",
@@ -148,7 +176,9 @@ def trace_text(t: TraceResult) -> str:
     return "\n".join(lines)
 
 
-def links_text(r: LinkReport, url: str | None = None) -> str:
+def links_text(r: LinkReport, url: str | None = None, values: list | None = None) -> str:
+    """`values`: fx.Value of each direct link's total today (in r.direct order), if known."""
+    values = values or []
     index = {m.address: m.index for m in r.members}
 
     def name(address: str) -> str:
@@ -165,10 +195,12 @@ def links_text(r: LinkReport, url: str | None = None) -> str:
         lines.append("⚠️ تاریخچه‌ی بعضی کیف‌ها کامل دریافت نشد؛ ممکن است ارتباط‌هایی دیده نشوند.")
     if r.direct:
         lines.append("\n<b>انتقال مستقیم:</b>")
-        for d in r.direct[:15]:
+        for i, d in enumerate(r.direct[:15]):
             biggest = d.transfers[0]
+            v = values[i] if i < len(values) else None
+            worth = money(v.usd_now, v.toman_now) if v is not None else ""
             lines.append(
-                f"• {name(d.from_address)} → {name(d.to_address)}: <b>{num(d.total)} {escape(d.token_symbol)}</b>"
+                f"• {name(d.from_address)} → {name(d.to_address)}: <b>{num(d.total)} {escape(d.token_symbol)}</b>{worth}"
                 f" ({d.count} انتقال؛ بزرگ‌ترین {num(biggest.amount)} در {biggest.timestamp:%Y-%m-%d})"
             )
     strong = [p for p in r.paths if not p.through_service]
@@ -205,12 +237,13 @@ def links_text(r: LinkReport, url: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def alert_text(a: Alert) -> str:
+def alert_text(a: Alert, value=None) -> str:
     arrow = "⬅️ دریافت" if a.direction.value == "in" else "➡️ ارسال"
     name = f" ({escape(a.watch_name)})" if a.watch_name else ""
     return (
         f"🔔 <b>تراکنش جدید</b>{name}\n{a.chain.value.upper()} {code(a.address)}\n"
-        f"{arrow}: <b>{num(a.amount)} {escape(a.token_symbol)}</b>\n"
+        f"{arrow}: <b>{num(a.amount)} {escape(a.token_symbol)}</b>"
+        f"{money(value.usd_then, value.toman_then) if value is not None else ''}\n"
         f"طرف‌حساب: {code(a.counterparty)}\n"
         f"tx: {code(a.tx_hash)}\n{a.timestamp.strftime('%Y-%m-%d %H:%M')} UTC"
     )

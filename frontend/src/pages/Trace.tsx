@@ -10,6 +10,7 @@ import { api, type Chain, type EndReason, type Label, type TraceRequest, type Tr
 import { fmtAmount, fmtCompact, fmtDate, fmtPercent, shortAddr } from '../lib/format'
 import { useLabelMap } from '../lib/hooks'
 import { useI18n, type TKey } from '../lib/i18n'
+import { Money, Worth } from '../lib/money'
 
 const RISKY = new Set(['mixer', 'sanctioned', 'scam'])
 const TERMINAL = new Set(['exchange', 'bridge', 'defi', 'service', 'token_contract'])
@@ -201,6 +202,14 @@ export function Trace() {
               <div className="text-3xl font-bold tabular">
                 {fmtAmount(result.traced_amount, lang)} <span className="text-lg text-ink-2">{result.token_symbol}</span>
               </div>
+              <Worth
+                amount={result.traced_amount}
+                symbol={result.token_symbol}
+                contract={result.token_contract}
+                chain={result.chain}
+                at={result.start.timestamp}
+                className="mt-1 block text-sm"
+              />
               <div className="mt-3 flex flex-col gap-1 text-sm">
                 <TxLink hash={result.start.tx_hash} chain={result.chain} />
                 <span className="text-xs text-muted">{fmtDate(result.start.timestamp, lang)}</span>
@@ -289,7 +298,13 @@ export function Trace() {
                       <Badge tone={e.reason === 'labeled' ? 'good' : e.reason === 'hub' ? 'violet' : 'neutral'}>{t(REASON_KEY[e.reason])}</Badge>
                     </td>
                     <td className={`${td} tabular font-medium`}>
-                      {fmtAmount(e.amount, lang)} {result.token_symbol}
+                      <Money
+                        amount={e.amount}
+                        symbol={result.token_symbol}
+                        contract={result.token_contract}
+                        chain={result.chain}
+                        at={result.start.timestamp}
+                      />
                     </td>
                     <td className={`${td} tabular`}>{fmtPercent(e.confidence, lang)}</td>
                   </tr>
@@ -321,7 +336,7 @@ export function Trace() {
                       </div>
                     </td>
                     <td className={`${td} tabular`}>
-                      <b>{fmtAmount(f.traced_amount, lang)}</b>
+                      <Money amount={f.traced_amount} symbol={result.token_symbol} contract={result.token_contract} chain={result.chain} at={f.timestamp} showSymbol={false} strong />
                       <div className="text-xs text-muted">
                         {t('of')} {fmtAmount(f.transfer_amount, lang)}
                       </div>

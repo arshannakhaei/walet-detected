@@ -1,8 +1,10 @@
 """Application settings, loaded from environment variables or a `.env` file."""
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -58,6 +60,12 @@ class Settings(BaseSettings):
     # Prices
     coingecko_base_url: str = "https://api.coingecko.com/api/v3"
     coingecko_api_key: str = ""
+    # Toman per US dollar. Empty = live market rate (Nobitex, then Wallex); set it
+    # when those are unreachable (e.g. outside Iran) or to fix the rate for a report.
+    usd_toman_rate: Decimal | None = None
+    nobitex_base_url: str = "https://api.nobitex.ir"
+    wallex_base_url: str = "https://api.wallex.ir"
+    binance_base_url: str = "https://api.binance.com"
 
     # Fetch limits
     max_transfers_per_address: int = 1000
@@ -78,6 +86,11 @@ class Settings(BaseSettings):
     telegram_allowed_users: str = ""
     # Address the dashboard is reachable at, used for links in bot messages
     public_url: str = ""
+
+    @field_validator("usd_toman_rate", mode="before")
+    @classmethod
+    def _empty_rate(cls, v):
+        return None if v in ("", None) else v
 
     @property
     def tron_rate(self) -> float:

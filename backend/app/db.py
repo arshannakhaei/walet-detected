@@ -141,6 +141,16 @@ class AlertRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class DailyRateRow(Base):
+    """Cached daily prices: series "toman" (toman per USDT) or "usd:<coingecko id>"."""
+
+    __tablename__ = "daily_rates"
+
+    series: Mapped[str] = mapped_column(String(60), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD (UTC)
+    value: Mapped[str] = mapped_column(String(40))
+
+
 class Database:
     def __init__(self, url: str):
         self.engine: AsyncEngine = create_async_engine(url)
@@ -225,3 +235,23 @@ class Database:
                 delete(LabelRow).where(LabelRow.chain == chain.value, LabelRow.address == address)
             )
             return result.rowcount > 0
+
+    async def daily_rates(self, series: str, start: str, end: str) -> dict[str, Decimal]:
+        async with self.sessions() as session:
+            rows = await session.scalars(
+                select(DailyRateRow).where(
+                    DailyRateRow.series == series, DailyRateRow.day >= start, DailyRateRow.day <= end
+                )
+            )
+            return {r.day: Decimal(r.value) for r in rows}
+
+    async def save_daily_rates(self, series: str, values: dict[str, Decimal]) -> None:
+        if not values:
+            return
+        rows = [{"series": series, "day": d, "value": str(v)} for d, v in values.items()]
+        async with self.sessions.begin() as session:
+            for i in range(0, len(rows), 300):
+                stmt = sqlite_insert(DailyRateRow).values(rows[i : i + 300])
+                await session.execute(
+                    stmt.on_conflict_do_update(index_elements=["series", "day"], set_={"value": stmt.excluded.value})
+                )

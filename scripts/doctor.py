@@ -77,6 +77,7 @@ def main() -> int:
     line("Demo mode", env.get("DEMO_MODE", "false"))
     for key in ("TRONGRID_API_KEY", "ETHERSCAN_API_KEY", "TELEGRAM_BOT_TOKEN"):
         line(key, "set" if env.get(key) else "not set")
+    print("       To test whether the keys actually work: check_keys.bat (python scripts/check_keys.py)")
 
     running = chaintrace_running(host, port)
     usable = port_usable(host, port)

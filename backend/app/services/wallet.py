@@ -11,6 +11,7 @@ from app.models import (
     Chain,
     Counterparty,
     Direction,
+    TokenBalance,
     TokenFlow,
     Transfer,
     TransferView,

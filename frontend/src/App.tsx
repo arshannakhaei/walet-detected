@@ -4,6 +4,7 @@ import { CaseDetail } from './pages/CaseDetail'
 import { Cases } from './pages/Cases'
 import { Home } from './pages/Home'
 import { Labels } from './pages/Labels'
+import { Links } from './pages/Links'
 import { Settings } from './pages/Settings'
 import { Trace } from './pages/Trace'
 import { Watchlist } from './pages/Watchlist'
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/wallet/:chain/:address" element={<WalletPage />} />
         <Route path="/trace" element={<Trace />} />
+        <Route path="/links" element={<Links />} />
         <Route path="/cases" element={<Cases />} />
         <Route path="/cases/:id" element={<CaseDetail />} />
         <Route path="/watchlist" element={<Watchlist />} />

@@ -153,10 +153,29 @@ def test_watchlist_label_and_language(server, page):
     assert page.evaluate("document.documentElement.dir") == "rtl"
 
 
+def test_links_between_wallets(server, page):
+    from app.providers import demo as story
+
+    base, _ = server
+    page.goto(f"{base}/links")
+    members = [story.SCAMMER, *story.MULES, story.VICTIMS[0], story.VICTIMS[1]]
+    page.locator("main textarea").fill("\n".join(members))
+    page.get_by_text("(7 addresses)").wait_for()
+    page.get_by_role("button", name="Analyze links").click()
+    page.get_by_text("Findings").wait_for()
+    page.get_by_text(f"went from #1 ({story.SCAMMER[:5]}").first.wait_for()
+    page.get_by_text("Direct transfers between wallets (").wait_for()
+    assert page.locator("canvas").count() > 0
+    assert "job=" in page.url
+    # Reloading keeps the finished analysis.
+    page.reload()
+    page.get_by_text("Findings").wait_for()
+
+
 def test_mobile_layout_has_no_horizontal_scroll(server, page):
     base, demo = server
     page.set_viewport_size({"width": 375, "height": 800})
-    for path in ["/", f"/wallet/tron/{demo['scammer']}", "/trace", "/cases", "/watchlist", "/labels", "/settings"]:
+    for path in ["/", f"/wallet/tron/{demo['scammer']}", "/trace", "/links", "/cases", "/watchlist", "/labels", "/settings"]:
         page.goto(base + path)
         page.wait_for_timeout(800)
         width = page.evaluate("document.documentElement.scrollWidth")

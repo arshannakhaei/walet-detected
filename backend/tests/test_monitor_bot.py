@@ -8,6 +8,7 @@ from app.bot.telegram import TelegramBot, _chunks
 from app.models import Chain
 from app.services.graph import GraphBuilder, GraphParams
 from app.services.graph_image import render_png
+from app.services.links import LinkAnalyzer
 from app.services.monitor import MonitorService
 from app.services.risk import RiskAnalyzer
 from app.services.tracer import Tracer
@@ -84,6 +85,7 @@ async def _bot(env):
         tracer=Tracer(wallets, labels, 1000),
         risk=RiskAnalyzer(wallets, labels, graphs),
         monitor=MonitorService(wallets._db, wallets),
+        links=SimpleNamespace(analyzer=LinkAnalyzer(wallets, labels, 1000)),
     )
     return TelegramBot("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi", {1}, services, "http://localhost:8000")
 
@@ -124,8 +126,19 @@ async def test_bot_rejects_strangers_and_bad_input(env):
     assert msg.sent[-1].startswith("❌")
 
 
+async def test_bot_links_from_pasted_list(env):
+    bot = await _bot(env)
+    msg = FakeMessage()
+    await bot._guard(msg, lambda: bot.links(msg, ["USDT", VICTIM, SCAMMER, M1]))
+    report = msg.sent[-1]
+    assert "ارتباط بین 3 کیف" in report and "#1 → #2" in report and "#2 → #3" in report
+    assert f"#1 <code>{VICTIM}</code>" in report
+    await bot._guard(msg, lambda: bot.links(msg, [VICTIM]))
+    assert msg.sent[-1].startswith("❌")
+
+
 def test_help_mentions_all_commands():
-    for command in ("/wallet", "/graph", "/risk", "/trace", "/watch", "/unwatch", "/watchlist"):
+    for command in ("/wallet", "/graph", "/risk", "/trace", "/watch", "/unwatch", "/watchlist", "/links"):
         assert command in texts.HELP
 
 

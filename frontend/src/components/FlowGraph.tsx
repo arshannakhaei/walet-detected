@@ -56,7 +56,7 @@ export const FlowGraph = forwardRef<
   {
     nodes: FlowNode[]
     edges: FlowEdge[]
-    layout: 'layers' | 'force'
+    layout: 'layers' | 'force' | 'circle'
     selected?: string | null
     onSelect?: (id: string | null) => void
     onExpand?: (id: string) => void
@@ -160,7 +160,9 @@ export const FlowGraph = forwardRef<
       layout:
         layout === 'layers'
           ? { name: 'preset', positions, fit: true, padding: 40 }
-          : { name: 'cose', animate: false, padding: 40, nodeRepulsion: () => 9000, idealEdgeLength: () => 140 },
+          : layout === 'circle'
+            ? { name: 'circle', padding: 50, spacingFactor: 1.1, avoidOverlap: true }
+            : { name: 'cose', animate: false, padding: 40, nodeRepulsion: () => 9000, idealEdgeLength: () => 140 },
       wheelSensitivity: 0.3,
       minZoom: 0.1,
       maxZoom: 3,

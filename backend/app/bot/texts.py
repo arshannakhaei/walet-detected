@@ -5,6 +5,7 @@ from html import escape
 
 from app.models import Counterparty, WalletOverview
 from app.services.labels import LabelService
+from app.services.links import LinkReport
 from app.services.monitor import Alert
 from app.services.risk import RiskReport
 from app.services.tracer import TraceResult
@@ -50,7 +51,8 @@ HELP = (
     "/trace <code>آدرس</code> <code>هش_تراکنش</code> [مبلغ] — ردیابی مسیر پول\n"
     "/watch <code>آدرس</code> [حداقل_مبلغ] [توکن] — هشدار تراکنش جدید\n"
     "/unwatch <code>آدرس</code> — حذف از واچ‌لیست\n"
-    "/watchlist — لیست آدرس‌های تحت نظر\n\n"
+    "/watchlist — لیست آدرس‌های تحت نظر\n"
+    "/links <code>آدرس۱</code> <code>آدرس۲</code> ... — ارتباط بین چند کیف (یا فقط لیست آدرس‌ها را بفرستید)\n\n"
     "شبکه‌ها: tron, ethereum, bsc, polygon, arbitrum, optimism, base, avalanche, bitcoin, solana"
 )
 
@@ -143,6 +145,63 @@ def trace_text(t: TraceResult) -> str:
             f"  • {num(ep.amount)} → {code(ep.address)}{tag}\n"
             f"     {REASON_FA.get(ep.reason.value, ep.reason.value)} · اطمینان {float(ep.confidence):.0%}"
         )
+    return "\n".join(lines)
+
+
+def links_text(r: LinkReport, url: str | None = None) -> str:
+    index = {m.address: m.index for m in r.members}
+
+    def name(address: str) -> str:
+        i = index.get(address)
+        return f"#{i}" if i else code(address)
+
+    token = escape(r.token or "همه‌ی توکن‌ها")
+    linked = sum(1 for m in r.members if m.linked_members)
+    lines = [
+        f"🕸 <b>ارتباط بین {len(r.members)} کیف</b> ({token})",
+        f"{linked} کیف مرتبط · {len(r.direct)} ارتباط مستقیم · {len(r.groups)} گروه",
+    ]
+    if not r.complete:
+        lines.append("⚠️ تاریخچه‌ی بعضی کیف‌ها کامل دریافت نشد؛ ممکن است ارتباط‌هایی دیده نشوند.")
+    if r.direct:
+        lines.append("\n<b>انتقال مستقیم:</b>")
+        for d in r.direct[:15]:
+            biggest = d.transfers[0]
+            lines.append(
+                f"• {name(d.from_address)} → {name(d.to_address)}: <b>{num(d.total)} {escape(d.token_symbol)}</b>"
+                f" ({d.count} انتقال؛ بزرگ‌ترین {num(biggest.amount)} در {biggest.timestamp:%Y-%m-%d})"
+            )
+    strong = [p for p in r.paths if not p.through_service]
+    if strong:
+        lines.append("\n<b>از طریق کیف واسط:</b>")
+        for p in strong[:10]:
+            via = " → ".join(code(v) for v in p.via)
+            extra = ""
+            if p.matched:
+                m = p.matched[0]
+                extra = f"\n   همان پول: {num(m.incoming.amount)} → {num(m.outgoing.amount)} بعد از {m.delay_minutes:g} دقیقه"
+            lines.append(
+                f"• {name(p.from_address)} → {via} → {name(p.to_address)}: {num(p.amount_out)} {escape(p.token_symbol)}{extra}"
+            )
+    if r.shared:
+        lines.append("\n<b>طرف‌حساب مشترک:</b>")
+        for s in r.shared[:8]:
+            role = "منبع مشترک" if s.role.value == "common_source" else "مقصد مشترک"
+            tag = f" ({escape(s.label.name)})" if s.label else ""
+            members = "، ".join(name(m.address) for m in s.members)
+            lines.append(f"• {role}{tag}: {code(s.address)} ← {members}")
+    if r.groups:
+        lines.append("\n<b>گروه‌ها:</b>")
+        for i, g in enumerate(r.groups, 1):
+            lines.append(f"• گروه {i}: " + "، ".join(name(a) for a in g))
+    if not (r.direct or r.paths or r.shared):
+        lines.append("\nهیچ انتقالی بین این کیف‌ها پیدا نشد.")
+    lines.append("\n<b>شماره‌ها:</b>")
+    for m in r.members:
+        err = " ⚠️" if m.error else ""
+        lines.append(f"#{m.index} {code(m.address)}{err}")
+    if url:
+        lines.append(f"\n🔗 {url}")
     return "\n".join(lines)
 
 

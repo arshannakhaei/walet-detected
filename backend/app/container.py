@@ -11,6 +11,7 @@ from app.providers import ProviderRegistry
 from app.services.cases import CaseService
 from app.services.graph import GraphBuilder
 from app.services.labels import LabelService
+from app.services.links import LinkAnalyzer, LinkJobs
 from app.services.monitor import MonitorService
 from app.services.pricing import PriceService
 from app.services.risk import RiskAnalyzer
@@ -32,10 +33,12 @@ class Services:
     risk: RiskAnalyzer
     cases: CaseService
     monitor: MonitorService
+    links: LinkJobs
     env_file: Path = ENV_FILE
 
     async def close(self) -> None:
         await self.monitor.stop()
+        await self.links.close()
         await self.wallets.close()
         await self.client.aclose()
         await self.db.close()
@@ -67,4 +70,5 @@ async def create_services(settings: Settings) -> Services:
         risk=RiskAnalyzer(wallets, labels, graphs),
         cases=CaseService(db),
         monitor=MonitorService(db, wallets, poll_limit=settings.page_size),
+        links=LinkJobs(LinkAnalyzer(wallets, labels, settings.hub_threshold)),
     )

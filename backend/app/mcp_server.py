@@ -24,6 +24,7 @@ from app.providers import ProviderError
 from app.services.addresses import detect_chains, resolve_address
 from app.services.graph import GraphParams
 from app.services.labels import LabelCategory
+from app.services.links import LinkParams, resolve_members
 from app.services.tracer import LotMethod, TraceDirection, TraceParams, TraceStartNotFound
 from app.services.wallet import TransferFilter, UnsupportedChainError
 
@@ -48,8 +49,8 @@ mcp = MCPServer(
         "arbitrum, optimism, base, avalanche, bitcoin, solana (the chain is detected from the "
         "address; pass `chain` for EVM addresses on chains other than Ethereum). Start with "
         "wallet_overview, then counterparties / fund_flow_graph to see who sent and received "
-        "money, trace_funds to follow a specific transaction hop by hop, and risk_report for "
-        "suspicious patterns. Amount tracing is heuristic: report confidence values."
+        "money, trace_funds to follow a specific transaction hop by hop, risk_report for "
+        "suspicious patterns, and wallet_links to find how a list of wallets are connected. Amount tracing is heuristic: report confidence values."
     ),
     lifespan=lifespan,
 )
@@ -299,6 +300,37 @@ async def risk_report(address: str, chain: str | None = None, deep: bool = False
     deep=True also checks addresses two hops away (slower)."""
     c, a = _target(address, chain)
     return _dump((await _svc().risk.analyze(c, a, deep)).model_dump())
+
+
+@tool
+async def wallet_links(
+    addresses: list[str],
+    chain: str | None = None,
+    token: str | None = "USDT",
+    min_amount: str = "1",
+    deep: bool = False,
+) -> str:
+    """Links between several wallets (2-50, one chain): direct transfers between them
+    (e.g. "3,999 USDT went from X to Z", with tx hashes), money that passed through an
+    outside intermediary wallet from one to another (with matching in/out amounts),
+    outside wallets that funded or received from several of them, and groups of connected
+    wallets. token=None checks every token. deep=True also downloads the main intermediaries
+    to find three-hop paths (slower). Members are numbered #1.. in input order."""
+    c, members = resolve_members(addresses, Chain(chain) if chain else None, _svc().providers.supported_chains)
+    params = LinkParams(token=token or None, min_amount=Decimal(min_amount), deep=deep)
+    report = await _svc().links.analyzer.analyze(c, members, params)
+    data = report.model_dump()
+    for d in data["direct"]:
+        d["transfers"] = d["transfers"][:10]
+    data["paths"] = [p for p in data["paths"] if not p["through_service"]][:40] + [
+        {k: p[k] for k in ("from_address", "to_address", "via", "amount_out", "through_service")}
+        for p in data["paths"]
+        if p["through_service"]
+    ][:10]
+    for p in data["paths"]:
+        if "matched" in p:
+            p["matched"] = p["matched"][:5]
+    return _dump(data)
 
 
 @tool

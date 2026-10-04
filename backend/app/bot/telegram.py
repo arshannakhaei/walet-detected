@@ -21,6 +21,7 @@ from app.providers import ProviderError
 from app.services.addresses import AddressError, detect_chains, resolve_address
 from app.services.graph import GraphParams
 from app.services.graph_image import render_png
+from app.services.links import LinkParams, resolve_members
 from app.services.monitor import Alert
 from app.services.tracer import TraceDirection, TraceParams, TraceStartNotFound
 from app.services.wallet import TransferFilter, UnsupportedChainError
@@ -175,6 +176,16 @@ class TelegramBot:
             lines.append(f"• {w.chain.value}: {texts.code(w.address)}{cond} {w.token or ''}")
         await self._reply(message, "\n".join(lines))
 
+    async def links(self, message: Message, args: list[str]) -> None:
+        addresses = [a for a in args if detect_chains(a)]
+        if len(addresses) < 2:
+            raise ValueError("حداقل دو آدرس بفرستید: /links <address1> <address2> ...")
+        chain, members = resolve_members(addresses, None, self._s.providers.supported_chains)
+        await message.answer(f"⏳ در حال بررسی ارتباط بین {len(members)} کیف... (ممکن است چند دقیقه طول بکشد)")
+        report = await self._s.links.analyzer.analyze(chain, members, LinkParams())
+        url = f"{self._public_url}/links" if self._public_url else None
+        await self._reply(message, texts.links_text(report, url))
+
     def _register(self) -> None:
         commands = {
             "wallet": self.wallet,
@@ -184,6 +195,7 @@ class TelegramBot:
             "watch": self.watch,
             "unwatch": self.unwatch,
             "watchlist": self.watchlist,
+            "links": self.links,
         }
         for name, handler in commands.items():
             async def on_command(message: Message, command: CommandObject, handler=handler):
@@ -202,7 +214,9 @@ class TelegramBot:
         async def on_text(message: Message):
             # A bare address is treated as /wallet.
             words = texts.parse_args(message.text)
-            if words and detect_chains(words[0]):
+            if sum(1 for w in words if detect_chains(w)) >= 2:  # a pasted list of addresses
+                await self._guard(message, lambda: self.links(message, words))
+            elif words and detect_chains(words[0]):
                 await self._guard(message, lambda: self.wallet(message, words))
             elif self._ok(message):
                 await message.answer(texts.HELP)

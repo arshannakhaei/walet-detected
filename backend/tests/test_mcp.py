@@ -8,6 +8,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from app import mcp_server
 from app.services.graph import GraphBuilder
+from app.services.links import LinkAnalyzer
 from app.services.risk import RiskAnalyzer
 from app.services.tracer import Tracer
 from tests.test_tracing import EXCHANGE, M1, M2, SCAMMER, VICTIM, env  # noqa: F401
@@ -24,6 +25,7 @@ async def services(env, monkeypatch):
         graphs=graphs,
         tracer=Tracer(wallets, labels, 1000),
         risk=RiskAnalyzer(wallets, labels, graphs),
+        links=SimpleNamespace(analyzer=LinkAnalyzer(wallets, labels, 1000)),
     )
     monkeypatch.setattr(mcp_server, "_services", svc)
     return svc
@@ -53,3 +55,12 @@ async def test_errors_are_tool_errors(services):
         await mcp_server.wallet_overview("nonsense")
     with pytest.raises(ToolError, match="no transfer"):
         await mcp_server.trace_funds(VICTIM, "missing")
+
+
+async def test_wallet_links(services):
+    data = json.loads(await mcp_server.wallet_links([VICTIM, SCAMMER, M1, M2]))
+    pairs = {(d["from_address"], d["to_address"]) for d in data["direct"]}
+    assert (VICTIM, SCAMMER) in pairs and (SCAMMER, M1) in pairs
+    assert len(data["groups"]) == 1
+    with pytest.raises(ToolError, match="at least two"):
+        await mcp_server.wallet_links([VICTIM])

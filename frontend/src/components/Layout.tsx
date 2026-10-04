@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bell, Briefcase, Eye, Languages, Moon, Route, Search, Settings, Sun, Tags } from 'lucide-react'
+import { Bell, Briefcase, Eye, Languages, Moon, Network, Route, Search, Settings, Sun, Tags } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -11,6 +11,7 @@ import { useTheme } from '../lib/theme'
 const NAV: { to: string; key: TKey; icon: typeof Search }[] = [
   { to: '/', key: 'nav_search', icon: Search },
   { to: '/trace', key: 'nav_trace', icon: Route },
+  { to: '/links', key: 'nav_links', icon: Network },
   { to: '/cases', key: 'nav_cases', icon: Briefcase },
   { to: '/watchlist', key: 'nav_watchlist', icon: Eye },
   { to: '/labels', key: 'nav_labels', icon: Tags },
@@ -134,7 +135,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Mobile bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-surface lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-7 border-t border-line bg-surface lg:hidden">
         {NAV.map(({ to, key, icon: Icon }) => (
           <NavLink
             key={to}

@@ -35,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         s.risk = services.risk
         s.cases = services.cases
         s.monitor = services.monitor
+        s.links = services.links
 
         bot = None
         if settings.telegram_bot_token:

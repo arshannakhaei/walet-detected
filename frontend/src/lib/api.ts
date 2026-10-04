@@ -366,6 +366,101 @@ export interface KeysIn {
   solana_rpc_url?: string
 }
 
+export interface LinkTransfer {
+  tx_hash: string
+  timestamp: string
+  from_address: string
+  to_address: string
+  amount: string
+  token_symbol: string
+}
+
+export interface DirectLink {
+  from_address: string
+  to_address: string
+  token_symbol: string
+  token_contract: string | null
+  total: string
+  count: number
+  first_seen: string
+  last_seen: string
+  transfers: LinkTransfer[]
+}
+
+export interface MatchedHop {
+  incoming: LinkTransfer
+  outgoing: LinkTransfer
+  delay_minutes: number
+}
+
+export interface PathLink {
+  from_address: string
+  to_address: string
+  via: string[]
+  via_labels: (Label | null)[]
+  token_symbol: string
+  token_contract: string | null
+  amount_in: string
+  amount_out: string
+  matched: MatchedHop[]
+  matched_amount: string
+  through_service: boolean
+}
+
+export interface SharedCounterparty {
+  address: string
+  label: Label | null
+  role: 'common_source' | 'common_destination'
+  token_symbol: string
+  token_contract: string | null
+  members: { address: string; amount: string; count: number }[]
+  total: string
+}
+
+export interface LinkMember {
+  address: string
+  index: number
+  label: Label | null
+  transfer_count: number
+  truncated: boolean
+  error: string | null
+  sent_to_members: string
+  received_from_members: string
+  linked_members: number
+  group: number | null
+}
+
+export interface LinkReport {
+  chain: Chain
+  token: string | null
+  members: LinkMember[]
+  direct: DirectLink[]
+  paths: PathLink[]
+  shared: SharedCounterparty[]
+  groups: string[][]
+  intermediaries_checked: number
+  complete: boolean
+}
+
+export interface LinkJob {
+  id: string
+  state: 'running' | 'done' | 'failed'
+  stage: 'members' | 'intermediaries'
+  done: number
+  total: number
+  error: string | null
+  result?: LinkReport | null
+}
+
+export interface LinksRequest {
+  addresses: string
+  chain?: Chain | null
+  token: string | null
+  min_amount: string
+  deep: boolean
+  match_window_hours: number
+}
+
 export const isRateLimit = (e: unknown) => e instanceof Error && /rate limit|HTTP 429/i.test(e.message)
 
 export const api = {
@@ -397,6 +492,8 @@ export const api = {
     p: { depth_in: number; depth_out: number; max_nodes: number; max_children: number; follow_time: boolean } & TransferFilters,
   ) => get<Graph>(`/api/graph/${enc(address)}${query({ chain, ...p })}`),
   trace: (body: TraceRequest) => request<TraceResult>('POST', '/api/trace', body),
+  startLinks: (body: LinksRequest) => request<LinkJob>('POST', '/api/links', body),
+  linkJob: (id: string) => get<LinkJob>(`/api/links/${enc(id)}`),
 
   labels: (chain?: Chain) => get<Label[]>(`/api/labels${query({ chain })}`),
   setLabel: (chain: Chain, address: string, body: { name: string; category: LabelCategory; note?: string | null }) =>

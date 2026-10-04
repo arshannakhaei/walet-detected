@@ -162,6 +162,8 @@ class MemberSummary(BaseModel):
     received_from_members: Decimal = Decimal(0)
     linked_members: int = 0
     group: int | None = Field(None, description="Members in the same group are connected by money flows.")
+    usdt_frozen: bool | None = Field(None, description="USDT frozen by Tether (None = unknown).")
+    sanctioned: bool | None = Field(None, description="On a sanctions list (Chainalysis oracle; None = unknown).")
 
 
 class LinkReport(BaseModel):
@@ -237,7 +239,10 @@ def match_hops(
 
 
 class LinkAnalyzer:
-    def __init__(self, wallets: WalletService, labels: LabelService, hub_threshold: int, concurrency: int = 4):
+    def __init__(
+        self, wallets: WalletService, labels: LabelService, hub_threshold: int, concurrency: int = 4, sanctions=None
+    ):
+        self._sanctions = sanctions  # SanctionsChecker, optional
         self._wallets = wallets
         self._labels = labels
         self._hub_threshold = hub_threshold
@@ -281,6 +286,10 @@ class LinkAnalyzer:
                     progress(done, len(members), "members")
 
         histories = dict(zip(members, await asyncio.gather(*(load_member(a) for a in members))))
+        if self._sanctions is not None and self._sanctions.supports(chain):
+            for status in await self._sanctions.check_many(chain, members):
+                summaries[status.address].usdt_frozen = status.usdt_frozen
+                summaries[status.address].sanctioned = status.sanctioned
 
         # Every relevant transfer once (a transfer between two members shows up in both histories).
         seen: set[str] = set()

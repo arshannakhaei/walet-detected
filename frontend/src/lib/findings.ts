@@ -15,4 +15,8 @@ export const FINDING_TITLES_FA: Record<string, string> = {
   dormant_reactivated: 'فعال‌شدن دوباره‌ی ولت خاموش',
   poisoning_victim: 'احتمال از دست دادن پول با Address Poisoning',
   poisoning_target: 'هدف حمله‌ی Address Poisoning',
+  usdt_frozen: 'USDT این کیف توسط Tether مسدود شده',
+  sanctioned_oracle: 'آدرس تحریم‌شده (اوراکل Chainalysis)',
+  frozen_counterparty: 'تراکنش با کیف‌های مسدودشده توسط Tether',
+  sanctioned_counterparty: 'تراکنش با کیف‌های تحریم‌شده',
 }

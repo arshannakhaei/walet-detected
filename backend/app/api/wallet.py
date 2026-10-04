@@ -9,6 +9,7 @@ from app.api.deps import Target, call, normalized_filter, target, transfer_filte
 from app.models import Chain, Counterparty, TransferView, WalletOverview
 from app.providers import ProviderError
 from app.services.addresses import detect_chains, normalize_address
+from app.services.sanctions import SanctionStatus
 from app.services.wallet import TransferFilter, WalletService
 
 router = APIRouter(prefix="/api", tags=["wallet"])
@@ -86,6 +87,12 @@ async def activity(address: str, request: Request) -> list[ActivityItem]:
 @router.get("/wallet/{address}/overview", response_model=WalletOverview)
 async def overview(t: Target = Depends(target), svc: WalletService = Depends(service)) -> WalletOverview:
     return await call(svc.overview(t.chain, t.address))
+
+
+@router.get("/wallet/{address}/sanctions", response_model=SanctionStatus)
+async def sanctions(request: Request, t: Target = Depends(target)) -> SanctionStatus:
+    """Live checks: USDT frozen by Tether (Tron, Ethereum) and the Chainalysis sanctions oracle (EVM)."""
+    return await request.app.state.services.sanctions.check(t.chain, t.address)
 
 
 @router.get("/wallet/{address}/transfers", response_model=TransfersResponse)

@@ -3,6 +3,7 @@ import { Download, Info, Network, Play } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link as RouterLink, useSearchParams } from 'react-router-dom'
 import { Address, TxLink } from '../components/Address'
+import { SanctionBadges } from '../components/badges'
 import { FlowGraph, Legend, type FlowEdge, type FlowGraphHandle, type FlowNode, type NodeKind } from '../components/FlowGraph'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Select, Spinner, Stat, TableWrap, Textarea, Toggle, td, th } from '../components/ui'
 import { api, type Chain, type Label, type LinkReport, type LinksRequest } from '../lib/api'
@@ -44,6 +45,13 @@ function useNamer(report: LinkReport | undefined) {
 
 function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey) => string, lang: 'fa' | 'en') {
   const out: { text: Part[]; tone: 'strong' | 'normal' | 'weak'; tx?: string; money?: { amount: string; symbol: string; contract: string | null; at?: string } }[] = []
+  for (const m of r.members) {
+    if (m.usdt_frozen || m.sanctioned)
+      out.push({
+        text: fill(t(m.usdt_frozen ? 'links_s_frozen' : 'links_s_sanctioned'), { who: name(m.address) }),
+        tone: 'strong',
+      })
+  }
   for (const d of r.direct) {
     for (const tr of d.transfers.slice(0, 3)) {
       out.push({
@@ -471,6 +479,7 @@ function Results({ report: r }: { report: LinkReport }) {
                 <td className={`${td} tabular`}>{fmtNumber(m.index, lang)}</td>
                 <td className={td}>
                   <Address address={m.address} chain={r.chain} label={labelOf(m.address)} />
+                  <SanctionBadges status={m} />
                   {m.error && <div className="mt-1 text-xs text-[var(--critical)]">{m.error}</div>}
                 </td>
                 <td className={td}>

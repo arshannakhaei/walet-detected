@@ -194,6 +194,15 @@ def test_dollar_and_toman_values(server, page):
     page.get_by_text("Manual rate", exact=True).wait_for()
 
 
+def test_frozen_wallet_badge(server, page):
+    from app.providers import demo as story
+
+    base, _ = server
+    page.goto(f"{base}/wallet/tron/{story.MULES[3]}")
+    page.get_by_text("USDT frozen (Tether)").first.wait_for()
+    page.get_by_text("Critical").first.wait_for()
+
+
 def test_mobile_layout_has_no_horizontal_scroll(server, page):
     base, demo = server
     page.set_viewport_size({"width": 375, "height": 800})

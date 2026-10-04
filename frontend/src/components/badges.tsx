@@ -51,3 +51,23 @@ const SEVERITY_TONE = { info: 'neutral', low: 'good', medium: 'warning', high: '
 export function SeverityBadge({ severity }: { severity: Severity }) {
   return <Badge tone={SEVERITY_TONE[severity]}>{severity}</Badge>
 }
+
+/** "USDT frozen by Tether" / "Sanctioned" from the live checks; nothing when clean or unknown. */
+export function SanctionBadges({ status }: { status?: { usdt_frozen: boolean | null; sanctioned: boolean | null } | null }) {
+  const { t } = useI18n()
+  if (!status) return null
+  return (
+    <>
+      {status.usdt_frozen && (
+        <Badge tone="critical" title={t('frozen_help')}>
+          {t('usdt_frozen')}
+        </Badge>
+      )}
+      {status.sanctioned && (
+        <Badge tone="critical" title={t('sanctioned_help')}>
+          {t('sanctioned_badge')}
+        </Badge>
+      )}
+    </>
+  )
+}

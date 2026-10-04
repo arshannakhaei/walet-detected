@@ -336,6 +336,13 @@ const fa = {
   rate_save: "ذخیره‌ی نرخ",
   rate_clear: "استفاده از نرخ زنده",
   per_dollar: "تومان برای هر دلار",
+  usdt_frozen: "USDT مسدود (Tether)",
+  sanctioned_badge: "تحریم",
+  frozen_help: "Tether این آدرس را در لیست سیاه گذاشته و USDT آن قابل جابه‌جایی نیست (معمولاً به درخواست پلیس برای کلاهبرداری یا هک).",
+  sanctioned_help: "طبق اوراکل تحریم Chainalysis، این آدرس در لیست تحریم آمریکا/اروپا/سازمان ملل است.",
+  links_s_frozen: "USDT کیف {who} توسط Tether مسدود شده",
+  links_s_sanctioned: "کیف {who} در لیست تحریم است",
+  key_alchemy: "کلید Alchemy (بررسی تحریم روی شبکه‌های EVM، اختیاری)",
 }
 
 type Dict = typeof fa
@@ -677,6 +684,13 @@ const en: Dict = {
   rate_save: "Save rate",
   rate_clear: "Use live rate",
   per_dollar: "toman per dollar",
+  usdt_frozen: "USDT frozen (Tether)",
+  sanctioned_badge: "Sanctioned",
+  frozen_help: "Tether has blacklisted this address; its USDT cannot move (usually at the request of law enforcement, for scams or hacks).",
+  sanctioned_help: "On a US/EU/UN sanctions list according to the Chainalysis sanctions oracle.",
+  links_s_frozen: "Wallet {who} has its USDT frozen by Tether",
+  links_s_sanctioned: "Wallet {who} is on a sanctions list",
+  key_alchemy: "Alchemy key (sanctions check on EVM chains, optional)",
 }
 
 export type Lang = 'fa' | 'en'

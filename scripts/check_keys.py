@@ -40,7 +40,7 @@ KNOWN = {
     "TRONGRID_BASE_URL", "TRONGRID_API_KEY", "TRON_REQUESTS_PER_SECOND",
     "ETHERSCAN_API_KEY", "ETHERSCAN_BASE_URL", "EVM_REQUESTS_PER_SECOND",
     "BITCOIN_API_URL", "BITCOIN_REQUESTS_PER_SECOND", "BITCOIN_MAX_TRANSACTIONS",
-    "SOLANA_RPC_URL", "SOLANA_REQUESTS_PER_SECOND", "SOLANA_MAX_TRANSACTIONS",
+    "SOLANA_RPC_URL", "SOLANA_REQUESTS_PER_SECOND", "SOLANA_MAX_TRANSACTIONS", "ALCHEMY_API_KEY",
     "COINGECKO_BASE_URL", "COINGECKO_API_KEY", "USD_TOMAN_RATE",
     "NOBITEX_BASE_URL", "WALLEX_BASE_URL", "BINANCE_BASE_URL",
     "MAX_TRANSFERS_PER_ADDRESS", "PAGE_SIZE", "HUB_THRESHOLD", "CACHE_TTL_SECONDS",
@@ -49,7 +49,9 @@ KNOWN = {
     # collected now, used by upcoming features
     "TRONSCAN_API_KEY", "CHAINALYSIS_API_KEY", "ALCHEMY_API_KEY", "BITQUERY_API_KEY", "ARKHAM_API_KEY",
 }
-FUTURE = {"ALCHEMY_API_KEY": "Alchemy", "BITQUERY_API_KEY": "Bitquery", "ARKHAM_API_KEY": "Arkham"}
+FUTURE = {"BITQUERY_API_KEY": "Bitquery", "ARKHAM_API_KEY": "Arkham"}
+ORACLE = "0x40c57923924b5c5c5455c48d93317139addac8fb"
+PUBLIC_ETH_RPC = "https://ethereum-rpc.publicnode.com"
 
 
 @dataclass
@@ -202,7 +204,10 @@ async def check_coingecko(client, env, urls) -> Result:
 
 async def check_chainalysis(client, env, urls) -> Result:
     key = env.get("CHAINALYSIS_API_KEY", "")
-    r = Result("Chainalysis", "CHAINALYSIS_API_KEY", "unset", "not set (live sanctions check, coming next)", mask(key) if key else "")
+    r = Result(
+        "Chainalysis", "CHAINALYSIS_API_KEY", "unset",
+        "not needed: the free Chainalysis sanctions oracle is used instead", mask(key) if key else "",
+    )
     if not key:
         return r
     try:
@@ -214,6 +219,43 @@ async def check_chainalysis(client, env, urls) -> Result:
         return Result(r.service, r.variable, "fail", _http(resp), r.shown)
     except Exception as exc:  # noqa: BLE001
         return Result(r.service, r.variable, "fail", _reason(exc), r.shown)
+
+
+async def check_alchemy(client, env, urls) -> Result:
+    key = env.get("ALCHEMY_API_KEY", "")
+    r = Result("Alchemy", "ALCHEMY_API_KEY", "unset", "not set (optional: public RPCs are used)", mask(key) if key else "")
+    if not key:
+        return r
+    try:
+        resp = await client.post(
+            urls.get("alchemy", f"https://eth-mainnet.g.alchemy.com/v2/{key}"),
+            json={"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []},
+        )
+        data = resp.json() if resp.status_code == 200 else {}
+        if str(data.get("result", "")).startswith("0x"):
+            return Result(r.service, r.variable, "ok", "key accepted", r.shown)
+        if resp.status_code == 200:
+            return Result(r.service, r.variable, "fail", "Alchemy says: " + str((data.get("error") or {}).get("message", "error"))[:100], r.shown)
+        return Result(r.service, r.variable, "fail", _http(resp), r.shown)
+    except Exception as exc:  # noqa: BLE001
+        return Result(r.service, r.variable, "fail", _reason(exc), r.shown)
+
+
+async def check_oracle(client, env, urls) -> Result:
+    """The free Chainalysis sanctions oracle on Ethereum (no key needed)."""
+    key = env.get("ALCHEMY_API_KEY", "")
+    url = urls.get("oracle_rpc") or (f"https://eth-mainnet.g.alchemy.com/v2/{key}" if key else PUBLIC_ETH_RPC)
+    data = "0xdf592f7d" + "0" * 64  # isSanctioned(0x000...0)
+    try:
+        resp = await client.post(
+            url, json={"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": ORACLE, "data": data}, "latest"]}
+        )
+        result = resp.json().get("result", "") if resp.status_code == 200 else ""
+        if isinstance(result, str) and len(result) >= 66:
+            return Result("Sanctions oracle", "(no key needed)", "ok", "Chainalysis oracle answers" + (" via Alchemy" if key else ""))
+        return Result("Sanctions oracle", "(no key needed)", "fail", _http(resp) if resp.status_code != 200 else "unexpected answer")
+    except Exception as exc:  # noqa: BLE001
+        return Result("Sanctions oracle", "(no key needed)", "fail", _reason(exc))
 
 
 async def check_telegram(client, env, urls) -> list[Result]:
@@ -276,6 +318,8 @@ async def run_checks(env: dict[str, str], client: httpx.AsyncClient, urls: dict[
         check_tronscan(client, env, urls),
         check_solana(client, env, urls),
         check_coingecko(client, env, urls),
+        check_alchemy(client, env, urls),
+        check_oracle(client, env, urls),
         check_chainalysis(client, env, urls),
         check_toman(client, env, urls),
     ]

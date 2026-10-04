@@ -22,6 +22,7 @@ KEYS = {
     "CHAINALYSIS_API_KEY": "ch-abcdef1234567890",
     "TELEGRAM_BOT_TOKEN": "123456:ABCDEFabcdefSECRET",
     "SOLANA_RPC_URL": "https://mainnet.helius-rpc.com/?api-key=hel-secret-123456",
+    "ALCHEMY_API_KEY": "alch_secret123456",
 }
 
 
@@ -39,6 +40,11 @@ def mock_all_ok(r):
     r.get(f"{ck.URLS['coingecko']}/ping").respond(json={"gecko_says": "ok"})
     r.get(f"{ck.URLS['chainalysis']}/address/{ck.ZERO_EVM}").respond(json={"identifications": []})
     r.get(url__regex=r"https://api\.telegram\.org/bot.*/getMe").respond(json={"ok": True, "result": {"username": "ct_bot"}})
+    r.post("https://eth-mainnet.g.alchemy.com/v2/alch_secret123456").mock(
+        side_effect=lambda req: httpx.Response(
+            200, json={"result": "0x1" if b"eth_blockNumber" in req.content else "0x" + "0" * 64}
+        )
+    )
     r.get(f"{ck.URLS['nobitex']}/market/stats").respond(json={"stats": {"usdt-rls": {"latest": "1000000"}}})
 
 
@@ -52,7 +58,8 @@ def test_all_keys_ok_and_never_printed(tmp_path):
         mock_all_ok(r)
         text, code = run(write_env(tmp_path, env))
     assert code == 0
-    assert text.count("[OK]") == 9, text
+    assert text.count("[OK]") == 11, text
+    assert "Chainalysis oracle answers via Alchemy" in text
     assert "Problems in .env" not in text
     assert "bot @ct_bot" in text and "100,000 toman per dollar" in text and "2 allowed user id(s)" in text
     for value in KEYS.values():
@@ -69,6 +76,7 @@ def test_rejected_keys_explain_why(tmp_path):
         r.get(f"{ck.URLS['coingecko']}/ping").respond(400)
         r.get(url__regex=r"https://api\.telegram\.org/.*").respond(401, json={"ok": False})
         r.get(f"{ck.URLS['nobitex']}/market/stats").mock(side_effect=httpx.ConnectError("x"))
+        r.post(ck.PUBLIC_ETH_RPC).respond(json={"result": "0x" + "0" * 64})
         r.get(f"{ck.URLS['wallex']}/v1/markets").respond(json={"result": {"symbols": {"USDTTMN": {"stats": {"lastPrice": "95000"}}}}})
         text, code = run(write_env(tmp_path, env))
     assert code == 1
@@ -83,6 +91,7 @@ def test_network_errors_do_not_leak_tokens(tmp_path):
     env = "TELEGRAM_BOT_TOKEN=999:TOPSECRET\nUSD_TOMAN_RATE=60000\n"
     with respx.mock(assert_all_called=False) as r:
         r.get(url__regex=r"https://api\.telegram\.org/.*").mock(side_effect=httpx.ConnectError("https://api.telegram.org/bot999:TOPSECRET/getMe"))
+        r.post(ck.PUBLIC_ETH_RPC).mock(side_effect=httpx.ConnectError("x"))
         text, _ = run(write_env(tmp_path, env))
     assert "TOPSECRET" not in text
     assert "cannot connect" in text and "VPN needed" in text

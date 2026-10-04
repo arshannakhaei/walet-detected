@@ -13,6 +13,7 @@ const FIELDS: { name: KeyField; label: TKey; url: string; secret: boolean }[] = 
   { name: 'etherscan_api_key', label: 'key_etherscan', url: 'https://etherscan.io/apis', secret: true },
   { name: 'coingecko_api_key', label: 'key_coingecko', url: 'https://www.coingecko.com/en/api', secret: true },
   { name: 'solana_rpc_url', label: 'key_solana', url: 'https://www.helius.dev', secret: false },
+  { name: 'alchemy_api_key', label: 'key_alchemy', url: 'https://dashboard.alchemy.com', secret: true },
 ]
 
 function isSet(status: KeyStatus, name: KeyField): boolean {

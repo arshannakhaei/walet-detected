@@ -362,6 +362,16 @@ async def money_value(amount: str, token: str, chain: str = "tron", contract: st
 
 
 @tool
+async def sanctions_check(address: str, chain: str | None = None) -> str:
+    """Live freeze/sanctions check of an address: usdt_frozen = Tether has blacklisted it
+    (Tron and Ethereum USDT), sanctioned = on a US/EU/UN list per the Chainalysis oracle (EVM
+    chains), plus the built-in OFAC label if any. null means the source could not be reached."""
+    c, a = _target(address, chain)
+    status = await _svc().sanctions.check(c, a)
+    return _dump({**status.model_dump(), "label": _label(c, a)})
+
+
+@tool
 async def label_address(address: str, name: str, category: str, chain: str | None = None, note: str = "") -> str:
     """Save a label for an address (categories: exchange, bridge, mixer, defi, token_contract,
     sanctioned, scam, service, personal, other). Exchanges/bridges/mixers stop traces."""

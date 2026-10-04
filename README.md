@@ -78,6 +78,7 @@ python run.py
 | `SOLANA_RPC_URL` | RPC سولانا؛ endpoint عمومی کند است، یک URL رایگان Helius/QuickNode بهتر است |
 | `BITCOIN_API_URL` | Esplora API (پیش‌فرض mempool.space) |
 | `COINGECKO_API_KEY` | اختیاری، برای قیمت دلاری |
+| `ALCHEMY_API_KEY` | اختیاری؛ RPC سریع‌تر برای بررسی تحریم روی شبکه‌های EVM (بدون آن RPC عمومی) |
 | `USD_TOMAN_RATE` | نرخ دلار به تومان (دستی). خالی = نرخ زنده‌ی بازار USDT/تومان از نوبیتکس (و والکس اگر نوبیتکس جواب نداد). از صفحه‌ی تنظیمات هم وارد می‌شود |
 | `MAX_TRANSFERS_PER_ADDRESS` | حداکثر انتقال دریافتی برای هر آدرس (پیش‌فرض ۲۰۰۰) |
 | `HUB_THRESHOLD` | آدرس با انتقال بیشتر از این، «پرتراکنش» (معمولاً صرافی) حساب می‌شود و در گراف/ردیابی باز نمی‌شود (پیش‌فرض ۱۰۰۰) |
@@ -154,6 +155,15 @@ python run.py
 
 با **جستجوی عمیق**، تاریخچه‌ی ۲۵ کیف واسط اصلی هم گرفته می‌شود تا مسیرهای سه‌مرحله‌ای A → C → D → B پیدا شوند (ولت‌های پرتراکنش دنبال نمی‌شوند).
 
+### بررسی تحریم و مسدودی (بدون کلید)
+- **لیست سیاه Tether**: قرارداد USDT روی ترون و اتریوم (`isBlackListed`) می‌گوید آیا Tether این کیف را مسدود کرده؛
+  نشانه‌ی خیلی قوی برای کیف‌های USDT (معمولاً به درخواست پلیس برای کلاهبرداری/هک).
+- **اوراکل تحریم Chainalysis**: قرارداد رایگان روی شبکه‌های EVM (`isSanctioned`) با لیست تحریم‌های آمریکا، اروپا و سازمان ملل.
+- **لیست OFAC** داخلی (برچسب‌ها).
+
+یافته‌ها: `usdt_frozen` و `sanctioned_oracle` (بحرانی، امتیاز ۱۰۰) برای خود کیف؛ در تحلیل عمیق، ۲۰ طرف‌حساب اصلی هم بررسی
+می‌شوند (`frozen_counterparty`، `sanctioned_counterparty`). نشان «USDT مسدود» در صفحه‌ی کیف و جدول «ارتباط کیف‌ها» دیده می‌شود.
+
 ### امتیاز ریسک (۰ تا ۱۰۰)
 جمع امتیاز یافته‌ها (سقف ۱۰۰). هر یافته شواهدش را همراه دارد:
 
@@ -193,7 +203,7 @@ python run.py
 ## اتصال به Claude (MCP)
 
 `python mcp_server.py` یک سرور MCP (stdio) با ابزارهای `wallet_overview`, `counterparties`, `transfers`,
-`fund_flow_graph`, `trace_funds`, `risk_report`, `wallet_links`, `money_value`, `label_address`, `get_label`, `detect_address` است.
+`fund_flow_graph`, `trace_funds`, `risk_report`, `wallet_links`, `money_value`, `sanctions_check`, `label_address`, `get_label`, `detect_address` است.
 در Claude Desktop، محتوای `claude_desktop_config.example.json` را (با مسیر درست) به تنظیمات اضافه کنید.
 
 ---

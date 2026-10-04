@@ -3,7 +3,7 @@ import { Briefcase, Eye, FileText, GitFork, LayoutDashboard, List, Loader2, Refr
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Address } from '../../components/Address'
-import { ChainBadge, RiskBadge } from '../../components/badges'
+import { ChainBadge, RiskBadge, SanctionBadges } from '../../components/badges'
 import { AddToCaseDialog, LabelDialog } from '../../components/dialogs'
 import { Button, ErrorBox, Spinner, Tabs } from '../../components/ui'
 import { api, walletPath, type Chain } from '../../lib/api'
@@ -59,6 +59,11 @@ export function WalletPage() {
     queryFn: () => api.risk(addr, chain, false),
     enabled: overview.isSuccess,
   })
+  const sanctions = useQuery({
+    queryKey: ['sanctions', chain, addr],
+    queryFn: () => api.sanctions(addr, chain),
+    staleTime: 30 * 60_000,
+  })
   const watchlist = useQuery({ queryKey: ['watchlist'], queryFn: api.watchlist })
   const watched = watchlist.data?.some((w) => w.chain === chain && w.address === addr)
 
@@ -99,6 +104,7 @@ export function WalletPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ChainBadge chain={chain} />
           {risk.data && <RiskBadge report={risk.data} />}
+          <SanctionBadges status={sanctions.data} />
         </div>
         <div className="text-sm sm:text-base">
           <Address address={addr} chain={chain} label={label} full link={false} />

@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # None = automatic: 4/s with an Etherscan key (limit 5), 3/s on shared Blockscout.
     evm_requests_per_second: float | None = None
 
+    # Alchemy (optional): faster RPC for the free Chainalysis sanctions oracle on
+    # EVM chains; without it public RPCs are used.
+    alchemy_api_key: str = ""
+
     # Bitcoin (Esplora API: mempool.space or blockstream.info/api)
     bitcoin_api_url: str = "https://mempool.space/api"
     bitcoin_requests_per_second: float = 2.0

@@ -16,6 +16,7 @@ EDITABLE = {
     "coingecko_api_key": "COINGECKO_API_KEY",
     "solana_rpc_url": "SOLANA_RPC_URL",
     "usd_toman_rate": "USD_TOMAN_RATE",
+    "alchemy_api_key": "ALCHEMY_API_KEY",
 }
 LOCAL_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
@@ -24,6 +25,7 @@ class KeyStatus(BaseModel):
     trongrid_api_key: bool
     etherscan_api_key: bool
     coingecko_api_key: bool
+    alchemy_api_key: bool = False
     solana_rpc_url: str
     usd_toman_rate: Decimal | None = Field(None, description="Toman per dollar set by hand; None = live rate.")
     demo_mode: bool
@@ -36,6 +38,7 @@ class KeysIn(BaseModel):
     trongrid_api_key: str | None = Field(None, max_length=200)
     etherscan_api_key: str | None = Field(None, max_length=200)
     coingecko_api_key: str | None = Field(None, max_length=200)
+    alchemy_api_key: str | None = Field(None, max_length=200)
     solana_rpc_url: str | None = Field(None, max_length=500)
     usd_toman_rate: str | None = Field(None, max_length=20, description="Empty string clears it (live rate).")
 
@@ -52,6 +55,7 @@ def _status(request: Request) -> KeyStatus:
         trongrid_api_key=bool(s.trongrid_api_key),
         etherscan_api_key=bool(s.etherscan_api_key),
         coingecko_api_key=bool(s.coingecko_api_key),
+        alchemy_api_key=bool(s.alchemy_api_key),
         solana_rpc_url=s.solana_rpc_url,
         usd_toman_rate=s.usd_toman_rate,
         demo_mode=s.demo_mode,
@@ -97,4 +101,6 @@ async def set_keys(body: KeysIn, request: Request) -> KeyStatus:
     update_env_file({EDITABLE[k]: v for k, v in changes.items() if not (k == "solana_rpc_url" and not v)}, services.env_file)
     services.providers.reload(settings)
     services.prices.set_api_key(settings.coingecko_api_key)
+    services.sanctions.trongrid_key = settings.trongrid_api_key
+    services.sanctions.alchemy_key = settings.alchemy_api_key
     return _status(request)

@@ -352,12 +352,20 @@ export interface KeyStatus {
   trongrid_api_key: boolean
   etherscan_api_key: boolean
   coingecko_api_key: boolean
+  alchemy_api_key: boolean
   solana_rpc_url: string
   usd_toman_rate: string | null
   demo_mode: boolean
   tron_requests_per_second: number
   evm_requests_per_second: number
   can_edit: boolean
+}
+
+export interface SanctionStatus {
+  chain: Chain
+  address: string
+  sanctioned: boolean | null
+  usdt_frozen: boolean | null
 }
 
 export interface Quote {
@@ -377,6 +385,7 @@ export interface KeysIn {
   trongrid_api_key?: string
   etherscan_api_key?: string
   coingecko_api_key?: string
+  alchemy_api_key?: string
   solana_rpc_url?: string
   usd_toman_rate?: string
 }
@@ -443,6 +452,8 @@ export interface LinkMember {
   received_from_members: string
   linked_members: number
   group: number | null
+  usdt_frozen: boolean | null
+  sanctioned: boolean | null
 }
 
 export interface LinkReport {
@@ -499,6 +510,7 @@ export const api = {
     ),
   counterparties: (address: string, chain: Chain, f: TransferFilters) =>
     get<Counterparty[]>(walletPath(address, 'counterparties', chain, { ...f, limit: 1000 })),
+  sanctions: (address: string, chain: Chain) => get<SanctionStatus>(walletPath(address, 'sanctions', chain)),
   risk: (address: string, chain: Chain, deep: boolean) =>
     get<RiskReport>(walletPath(address, 'risk', chain, { deep })),
   timeline: (address: string, chain: Chain, bucket: string, token?: string) =>

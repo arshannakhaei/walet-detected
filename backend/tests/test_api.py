@@ -36,6 +36,8 @@ def mock_tron(trc20_items, trx_items):
         router.get("https://api.coingecko.com/api/v3/simple/price").mock(
             return_value=httpx.Response(200, json={"tron": {"usd": 0.25}})
         )
+        # Tether freeze list: nothing frozen.
+        router.post(f"{API}/wallet/triggerconstantcontract").respond(json={"constant_result": ["0" * 64]})
         # Rate sources are unreachable in tests: values fall back to the manual rate or none.
         for host in ("api.nobitex.ir", "api.wallex.ir", "api.binance.com"):
             router.route(host=host).respond(503)

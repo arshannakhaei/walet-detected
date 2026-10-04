@@ -97,15 +97,22 @@ def _looks_alike(a: str, b: str) -> bool:
     return a[:head].lower() == b[:head].lower() and a[-4:].lower() == b[-4:].lower()
 
 
+# Counterparties checked against the live sanctions/freeze lists in a deep analysis.
+SANCTION_COUNTERPARTIES = 20
+
+
 class RiskAnalyzer:
-    def __init__(self, wallets: WalletService, labels: LabelService, graphs: GraphBuilder):
+    def __init__(self, wallets: WalletService, labels: LabelService, graphs: GraphBuilder, sanctions=None):
         self._wallets = wallets
         self._labels = labels
         self._graphs = graphs
+        self._sanctions = sanctions  # SanctionsChecker, optional
 
     async def analyze(self, chain: Chain, address: str, deep: bool = False) -> RiskReport:
         transfers, truncated = await self._wallets.load_transfers(chain, address, quick=True)
         findings = analyze_transfers(chain, address, transfers, self._labels)
+        if self._sanctions is not None and self._sanctions.supports(chain):
+            findings.extend(await self._sanction_findings(chain, address, transfers, deep))
         if deep:
             findings.extend(await self._indirect_exposure(chain, address))
         findings.sort(key=lambda f: f.points, reverse=True)
@@ -119,6 +126,71 @@ class RiskAnalyzer:
             stats=wallet_stats(address, transfers),
             truncated=truncated,
         )
+
+    async def _sanction_findings(
+        self, chain: Chain, address: str, transfers: list[Transfer], deep: bool
+    ) -> list[Finding]:
+        findings: list[Finding] = []
+        own = await self._sanctions.check(chain, address)
+        if own.usdt_frozen:
+            findings.append(
+                Finding(
+                    code="usdt_frozen",
+                    severity=Severity.CRITICAL,
+                    points=100,
+                    title="USDT frozen by Tether",
+                    detail="Tether has blacklisted this address: its USDT cannot move. Tether freezes wallets "
+                    "on request of law enforcement, typically for scams, hacks and sanctions.",
+                    evidence=[address],
+                )
+            )
+        if own.sanctioned:
+            findings.append(
+                Finding(
+                    code="sanctioned_oracle",
+                    severity=Severity.CRITICAL,
+                    points=100,
+                    title="Sanctioned (Chainalysis sanctions oracle)",
+                    detail="The address is on a US, EU or UN sanctions list according to the Chainalysis oracle.",
+                    evidence=[address],
+                )
+            )
+        if not deep:
+            return findings
+
+        volume: dict[str, Decimal] = {}
+        for t in transfers:
+            if t.success and not is_spam(t) and t.from_address != t.to_address:
+                other = t.counterparty_for(address)
+                volume[other] = volume.get(other, Decimal(0)) + t.amount
+        top = sorted(volume, key=volume.get, reverse=True)[:SANCTION_COUNTERPARTIES]
+        statuses = await self._sanctions.check_many(chain, top)
+        frozen = [s.address for s in statuses if s.usdt_frozen]
+        sanctioned = [s.address for s in statuses if s.sanctioned]
+        if frozen:
+            findings.append(
+                Finding(
+                    code="frozen_counterparty",
+                    severity=Severity.HIGH,
+                    points=30,
+                    title="Transacted with wallets frozen by Tether",
+                    detail=f"{len(frozen)} of the {len(top)} main counterparties have had their USDT frozen by Tether.",
+                    evidence=frozen[:MAX_EVIDENCE],
+                )
+            )
+        if sanctioned:
+            findings.append(
+                Finding(
+                    code="sanctioned_counterparty",
+                    severity=Severity.HIGH,
+                    points=40,
+                    title="Transacted with sanctioned wallets",
+                    detail=f"{len(sanctioned)} of the {len(top)} main counterparties are on a sanctions list "
+                    "(Chainalysis oracle).",
+                    evidence=sanctioned[:MAX_EVIDENCE],
+                )
+            )
+        return findings
 
     async def _indirect_exposure(self, chain: Chain, address: str) -> list[Finding]:
         graph = await self._graphs.build(

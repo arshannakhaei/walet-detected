@@ -16,6 +16,7 @@ from app.services.links import LinkAnalyzer, LinkJobs
 from app.services.monitor import MonitorService
 from app.services.pricing import PriceService
 from app.services.risk import RiskAnalyzer
+from app.services.sanctions import SanctionsChecker, SanctionStatus
 from app.services.tracer import Tracer
 from app.services.wallet import WalletService
 
@@ -36,6 +37,7 @@ class Services:
     cases: CaseService
     monitor: MonitorService
     links: LinkJobs
+    sanctions: SanctionsChecker
     env_file: Path = ENV_FILE
 
     async def close(self) -> None:
@@ -68,6 +70,13 @@ async def create_services(settings: Settings) -> Services:
     labels = LabelService(db)
     await labels.load()
     graphs = GraphBuilder(wallets, labels, settings.hub_threshold)
+    sanctions = SanctionsChecker(
+        client,
+        settings.trongrid_base_url,
+        settings.trongrid_api_key,
+        settings.alchemy_api_key,
+        offline=_demo_sanctions() if settings.demo_mode else None,
+    )
     return Services(
         settings=settings,
         db=db,
@@ -79,8 +88,18 @@ async def create_services(settings: Settings) -> Services:
         labels=labels,
         graphs=graphs,
         tracer=Tracer(wallets, labels, settings.hub_threshold),
-        risk=RiskAnalyzer(wallets, labels, graphs),
+        risk=RiskAnalyzer(wallets, labels, graphs, sanctions),
         cases=CaseService(db),
         monitor=MonitorService(db, wallets, poll_limit=settings.page_size),
-        links=LinkJobs(LinkAnalyzer(wallets, labels, settings.hub_threshold)),
+        links=LinkJobs(LinkAnalyzer(wallets, labels, settings.hub_threshold, sanctions=sanctions)),
+        sanctions=sanctions,
     )
+
+
+def _demo_sanctions() -> dict:
+    """Demo: Tether has frozen the mule that kept part of the money."""
+    from app.models import Chain
+    from app.providers import demo
+
+    frozen = demo.MULES[3]
+    return {(Chain.TRON, frozen): SanctionStatus(chain=Chain.TRON, address=frozen, usdt_frozen=True)}

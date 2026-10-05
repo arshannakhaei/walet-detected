@@ -44,6 +44,7 @@ FINDING_FA = {
     "sanctioned_oracle": "آدرس تحریم‌شده (اوراکل Chainalysis)",
     "frozen_counterparty": "تراکنش با کیف‌های مسدودشده توسط Tether",
     "sanctioned_counterparty": "تراکنش با کیف‌های تحریم‌شده",
+    "likely_service": "احتمالاً کیف صرافی یا سرویس",
 }
 
 HELP = (

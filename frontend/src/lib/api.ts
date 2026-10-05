@@ -452,6 +452,8 @@ export interface LinkMember {
   received_from_members: string
   linked_members: number
   group: number | null
+  counterparty_count: number
+  likely_service: boolean
   usdt_frozen: boolean | null
   sanctioned: boolean | null
 }

@@ -343,6 +343,9 @@ const fa = {
   links_s_frozen: "USDT کیف {who} توسط Tether مسدود شده",
   links_s_sanctioned: "کیف {who} در لیست تحریم است",
   key_alchemy: "کلید Alchemy (بررسی تحریم روی شبکه‌های EVM، اختیاری)",
+  links_service: "احتمالاً صرافی/سرویس",
+  links_service_help: "این کیف با صدها آدرس مختلف کار کرده (یا برچسب صرافی دارد)؛ انتقال با آن نشانه‌ی مالکیت مشترک نیست، پس در گروه‌بندی حساب نمی‌شود.",
+  links_s_service: "{who} احتمالاً کیف صرافی یا سرویس است ({n} طرف‌حساب)؛ انتقال‌هایش با بقیه در گروه‌بندی حساب نشده",
 }
 
 type Dict = typeof fa
@@ -691,6 +694,9 @@ const en: Dict = {
   links_s_frozen: "Wallet {who} has its USDT frozen by Tether",
   links_s_sanctioned: "Wallet {who} is on a sanctions list",
   key_alchemy: "Alchemy key (sanctions check on EVM chains, optional)",
+  links_service: "Probably exchange/service",
+  links_service_help: "This wallet dealt with hundreds of addresses (or is labeled an exchange); transfers with it do not show common ownership, so it is left out of groups.",
+  links_s_service: "{who} is probably an exchange or service wallet ({n} counterparties); its transfers are not used for grouping",
 }
 
 export type Lang = 'fa' | 'en'

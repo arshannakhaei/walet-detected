@@ -123,3 +123,21 @@ def test_timeline_buckets():
         ("2024-04-10", 1, 0),
     ]
     assert [r["period"] for r in timeline(W, history, "month")] == ["2024-03", "2024-04"]
+
+
+def test_truncated_history_is_not_called_new_and_services_are_recognised():
+    from app.services.risk import SERVICE_COUNTERPARTIES
+
+    start = datetime(2026, 10, 5, tzinfo=timezone.utc)
+    payouts = [
+        Transfer(
+            chain=Chain.TRON, transfer_id=f"p{i}", tx_hash=f"p{i}", timestamp=start + timedelta(minutes=i),
+            from_address=W, to_address=make_address(9000 + i), amount=Decimal(9500),
+            token_symbol="USDT", token_contract=USDT, token_decimals=6,
+        )
+        for i in range(SERVICE_COUNTERPARTIES + 10)
+    ]
+    found = {f.code: f for f in analyze_transfers(Chain.TRON, W, payouts, labels(), truncated=True)}
+    assert "new_high_volume" not in found  # only the newest day of a long history is known
+    assert "likely_service" in found
+    assert found["fan_out"].points == 0 and found["structuring"].points == 0

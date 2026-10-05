@@ -110,7 +110,7 @@ class RiskAnalyzer:
 
     async def analyze(self, chain: Chain, address: str, deep: bool = False) -> RiskReport:
         transfers, truncated = await self._wallets.load_transfers(chain, address, quick=True)
-        findings = analyze_transfers(chain, address, transfers, self._labels)
+        findings = analyze_transfers(chain, address, transfers, self._labels, truncated)
         if self._sanctions is not None and self._sanctions.supports(chain):
             findings.extend(await self._sanction_findings(chain, address, transfers, deep))
         if deep:
@@ -252,9 +252,17 @@ def wallet_stats(address: str, transfers: list[Transfer]) -> WalletStats:
     )
 
 
+# A wallet dealing with this many different addresses is a service (exchange
+# hot wallet, payment processor), whose high activity is normal.
+SERVICE_COUNTERPARTIES = 500
+# Patterns that are suspicious for a person's wallet but routine for a service.
+ROUTINE_FOR_SERVICES = {"fan_in", "fan_out", "structuring", "round_amounts", "pass_through", "rapid_movement"}
+
+
 def analyze_transfers(
-    chain: Chain, address: str, transfers: list[Transfer], labels: LabelService
+    chain: Chain, address: str, transfers: list[Transfer], labels: LabelService, truncated: bool = False
 ) -> list[Finding]:
+    """`truncated`: only the newest part of the history is known, so the wallet's age is not."""
     findings: list[Finding] = []
     ok = [t for t in transfers if t.success]
     clean = [t for t in ok if not is_spam(t)]
@@ -420,7 +428,7 @@ def analyze_transfers(
                 evidence=[t.tx_hash for t in below][:MAX_EVIDENCE],
             )
         )
-    if stats.lifetime_days is not None and stats.lifetime_days < 30:
+    if not truncated and stats.lifetime_days is not None and stats.lifetime_days < 30:
         volume = sum((t.amount for t in stable), Decimal(0))
         if volume >= 100_000:
             findings.append(
@@ -491,6 +499,23 @@ def analyze_transfers(
                     evidence=[f"{fake} imitates {real}" for fake, real in lookalikes.items()][:MAX_EVIDENCE],
                 )
             )
+    counterparties = {t.counterparty_for(address) for t in clean} - {address}
+    if len(counterparties) >= SERVICE_COUNTERPARTIES:
+        for f in findings:
+            if f.code in ROUTINE_FOR_SERVICES:
+                f.points = 0
+        findings.append(
+            Finding(
+                code="likely_service",
+                severity=Severity.INFO,
+                points=0,
+                title="Probably an exchange or service wallet",
+                detail=f"Dealt with {len(counterparties):,}"
+                + ("+" if truncated else "")
+                + " different addresses. Mass payouts and deposits are routine for exchanges and payment "
+                "services; transfers with it do not show common ownership.",
+            )
+        )
     return findings
 
 

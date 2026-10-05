@@ -253,3 +253,22 @@ def test_demo_mode_story(tmp_path):
             tx = first_payment["items"][0]["transfer"]["tx_hash"]
             trace = c.post("/api/trace", json={"address": demo.VICTIMS[0], "tx_hash": tx}).json()
             assert Decimal(trace["summary"]["labeled"]) > 0  # reaches the exchange hot wallet
+
+
+def test_spam_tokens_are_hidden_from_balances_and_transfers():
+    from app.models import Chain, Transfer
+    from app.services.tokens import is_spam
+
+    def t(symbol, contract="TSpamSpamSpamSpamSpamSpamSpamSpamS"):
+        return Transfer(
+            chain=Chain.TRON, transfer_id=symbol, tx_hash=symbol, timestamp="2025-01-01T00:00:00Z",
+            from_address=ALICE, to_address=WALLET, amount=1000, token_symbol=symbol,
+            token_contract=contract, token_decimals=6,
+        )
+
+    for symbol in ["AGhaxi.com", "U567. C0M", "ha138 com", "Buy Energy in ip292", "QQ :632290",
+                   "Telegram: @ip292", "fenergy.fun", "USDт", "USDT"]:
+        assert is_spam(t(symbol)), symbol
+    for symbol in ["JST", "SUN.io", "SUNDOG", "VANT", "BTT"]:
+        assert not is_spam(t(symbol)), symbol
+    assert not is_spam(t("USDT", USDT))

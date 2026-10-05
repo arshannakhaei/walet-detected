@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend backend
 COPY frontend/dist frontend/dist
+COPY scripts scripts
 COPY run.py mcp_server.py ./
 ENV HOST=0.0.0.0 PORT=8765
 EXPOSE 8765

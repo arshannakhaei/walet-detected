@@ -145,7 +145,7 @@ def _kind(inv: Investigation, address: str) -> str:
         return "focus"
     if address in index:
         return "service_member" if is_service(inv, address) else "member"
-    return "exchange" if is_service(inv, address) else "outside"
+    return "exchange" if (is_service(inv, address) or address in inv.inferred) else "outside"
 
 
 def _node_color(inv: Investigation, address: str) -> str:
@@ -1021,7 +1021,7 @@ def list_network(inv: Investigation, max_outside: int = 4):
     personal = {a for a, nd in nodes.items() if nd.kind != "service_member"}
     ties: dict[str, dict[tuple[str, str], tuple[Decimal, int]]] = defaultdict(dict)
     for s in inv.links_all.shared:
-        if s.token_symbol.upper() != inv.token.upper() or is_service(inv, s.address):
+        if s.token_symbol.upper() != inv.token.upper() or is_service(inv, s.address) or s.address in inv.inferred:
             continue  # an exchange in common says little
         for share in s.members:
             if share.address in personal:

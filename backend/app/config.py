@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     trongrid_api_key: str = ""  # optional; raises rate limits when set
     # None = automatic: TronGrid allows 1 request/s without a key and ~15/s with one.
     tron_requests_per_second: float | None = None
+    # TronScan (optional key): an independent second source, used to verify the
+    # numbers of an investigation report against the explorer.
+    tronscan_base_url: str = "https://apilist.tronscanapi.com/api"
+    tronscan_api_key: str = ""
 
     # EVM chains. With a (free) Etherscan key, Etherscan V2 serves all EVM
     # chains; without one, Blockscout is used where a public instance exists.

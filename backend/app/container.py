@@ -11,6 +11,7 @@ from app.providers import ProviderRegistry
 from app.services.cases import CaseService
 from app.services.fx import ValueService
 from app.services.graph import GraphBuilder
+from app.services.investigation import Investigator
 from app.services.labels import LabelService
 from app.services.links import LinkAnalyzer, LinkJobs
 from app.services.monitor import MonitorService
@@ -18,6 +19,7 @@ from app.services.pricing import PriceService
 from app.services.risk import RiskAnalyzer
 from app.services.sanctions import SanctionsChecker, SanctionStatus
 from app.services.tracer import Tracer
+from app.services.tronscan import TronScanClient
 from app.services.wallet import WalletService
 
 
@@ -38,6 +40,7 @@ class Services:
     monitor: MonitorService
     links: LinkJobs
     sanctions: SanctionsChecker
+    investigator: Investigator
     env_file: Path = ENV_FILE
 
     async def close(self) -> None:
@@ -93,6 +96,18 @@ async def create_services(settings: Settings) -> Services:
         monitor=MonitorService(db, wallets, poll_limit=settings.page_size),
         links=LinkJobs(LinkAnalyzer(wallets, labels, settings.hub_threshold, sanctions=sanctions)),
         sanctions=sanctions,
+        investigator=Investigator(
+            wallets,
+            providers,
+            labels,
+            values,
+            sanctions=sanctions,
+            # Demo data does not exist on the real chain, so there is nothing to compare with.
+            tronscan=None
+            if settings.demo_mode
+            else TronScanClient(client, settings.tronscan_base_url, settings.tronscan_api_key),
+            hub_threshold=settings.hub_threshold,
+        ),
     )
 
 

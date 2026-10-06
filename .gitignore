@@ -10,3 +10,8 @@ node_modules/
 # Download package built from git archive
 *.zip
 chaintrace.log
+
+# Generated investigation reports and local screenshots
+reports/
+wallet-screens/
+docker-check/

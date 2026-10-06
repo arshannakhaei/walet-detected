@@ -51,6 +51,7 @@ export function Investigation() {
     enabled: !!jobId,
     retry: false,
     refetchInterval: (q) => ((q.state.data as InvestigationJob | undefined)?.state === 'running' ? 1500 : false),
+    refetchIntervalInBackground: true, // keep polling while the user waits in another tab
   })
   const data = job.data
   const running = start.isPending || data?.state === 'running'

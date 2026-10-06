@@ -79,7 +79,11 @@ def open_when_ready(url: str, host: str, port: int, wait_seconds: float = 90) ->
 
 
 def _say(message: str) -> None:
-    print(message, flush=True)
+    try:
+        print(message, flush=True)
+    except UnicodeEncodeError:  # non-UTF-8 console or redirected output on Windows
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(message.encode(encoding, "replace").decode(encoding), flush=True)
     log.info(message)
 
 

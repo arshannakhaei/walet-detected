@@ -51,7 +51,11 @@ async def run(args: argparse.Namespace) -> Path:
     finally:
         await services.close()
     out = Path(args.out or ROOT / "reports" / date.today().isoformat())
-    archive = write_report(inv, out, title=args.title, case_date=args.case_date)
+    checks = Path(args.checks).read_text(encoding="utf-8").splitlines() if args.checks else []
+    archive = write_report(
+        inv, out, title=args.title, case_date=args.case_date, spot_checks=[c.strip() for c in checks if c.strip()],
+        archive=Path(args.zip) if args.zip else None,
+    )
     for line in inv.warnings:
         print(f"  note: {line}")
     for p in inv.focus:
@@ -69,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", default="USDT")
     parser.add_argument("--title", default=None, help="report title (Persian or English)")
     parser.add_argument("--case-date", default=None, help="date of the case, shown on the cover")
+    parser.add_argument("--checks", default=None, help="text file with manual spot checks, one per line (HTML allowed)")
+    parser.add_argument("--zip", default=None, help="where to write the ZIP (default: next to the output folder)")
     parser.add_argument("--focus-limit", type=int, default=20_000, help="transfers downloaded per key wallet")
     parser.add_argument("--member-limit", type=int, default=5_000, help="transfers downloaded per other wallet")
     args = parser.parse_args(argv)

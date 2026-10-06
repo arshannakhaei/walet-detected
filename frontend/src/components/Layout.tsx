@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bell, Briefcase, Coins, Eye, Languages, Moon, Network, Route, Search, Settings, Sun, Tags } from 'lucide-react'
+import { Bell, Briefcase, Coins, Eye, FileText, Languages, Moon, Network, Route, Search, Settings, Sun, Tags } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -13,6 +13,7 @@ const NAV: { to: string; key: TKey; icon: typeof Search }[] = [
   { to: '/', key: 'nav_search', icon: Search },
   { to: '/trace', key: 'nav_trace', icon: Route },
   { to: '/links', key: 'nav_links', icon: Network },
+  { to: '/investigation', key: 'nav_investigation', icon: FileText },
   { to: '/cases', key: 'nav_cases', icon: Briefcase },
   { to: '/watchlist', key: 'nav_watchlist', icon: Eye },
   { to: '/labels', key: 'nav_labels', icon: Tags },

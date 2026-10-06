@@ -480,6 +480,27 @@ export interface LinkJob {
   result?: LinkReport | null
 }
 
+export interface InvestigationJob {
+  id: string
+  state: 'running' | 'done' | 'failed'
+  stage: string
+  done: number
+  total: number
+  error: string | null
+  warnings: string[]
+  verification: Record<string, string>
+  report_url: string | null
+  zip_url: string | null
+}
+
+export interface InvestigationRequest {
+  focus: string
+  addresses: string
+  token: string
+  title: string | null
+  case_date: string | null
+}
+
 export interface LinksRequest {
   addresses: string
   chain?: Chain | null
@@ -526,6 +547,8 @@ export const api = {
   trace: (body: TraceRequest) => request<TraceResult>('POST', '/api/trace', body),
   startLinks: (body: LinksRequest) => request<LinkJob>('POST', '/api/links', body),
   linkJob: (id: string) => get<LinkJob>(`/api/links/${enc(id)}`),
+  startInvestigation: (body: InvestigationRequest) => request<InvestigationJob>('POST', '/api/investigation', body),
+  investigationJob: (id: string) => get<InvestigationJob>(`/api/investigation/${enc(id)}`),
 
   labels: (chain?: Chain) => get<Label[]>(`/api/labels${query({ chain })}`),
   setLabel: (chain: Chain, address: string, body: { name: string; category: LabelCategory; note?: string | null }) =>

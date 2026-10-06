@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { CaseDetail } from './pages/CaseDetail'
 import { Cases } from './pages/Cases'
 import { Home } from './pages/Home'
+import { Investigation } from './pages/Investigation'
 import { Labels } from './pages/Labels'
 import { Links } from './pages/Links'
 import { Settings } from './pages/Settings'
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/wallet/:chain/:address" element={<WalletPage />} />
         <Route path="/trace" element={<Trace />} />
         <Route path="/links" element={<Links />} />
+        <Route path="/investigation" element={<Investigation />} />
         <Route path="/cases" element={<Cases />} />
         <Route path="/cases/:id" element={<CaseDetail />} />
         <Route path="/watchlist" element={<Watchlist />} />

@@ -468,3 +468,62 @@ def test_report_fits_the_screen_without_errors(report_dir, width):
         assert page.evaluate("document.documentElement.dataset.theme") in ("dark", "light")
         browser.close()
     assert errors == []
+
+
+# --- API (offline demo data) ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def demo_client(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.api import investigation as api
+    from app.config import Settings
+    from app.main import create_app
+
+    monkeypatch.setattr(api, "REPORTS_DIR", tmp_path / "reports")
+    settings = Settings(
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'demo.db'}",
+        demo_mode=True,
+        monitor_interval_seconds=0,
+        telegram_bot_token="",
+    )
+    with TestClient(create_app(settings)) as c:
+        yield c
+
+
+def test_investigation_api_on_demo(demo_client):
+    from app.providers import demo
+
+    members = [demo.SCAMMER, *demo.MULES, demo.VICTIMS[0]]
+    resp = demo_client.post(
+        "/api/investigation",
+        json={"focus": [demo.SCAMMER, demo.MULES[0]], "addresses": "\n".join(members), "title": "پروندهٔ آزمایشی"},
+    )
+    assert resp.status_code == 200, resp.text
+    job = resp.json()
+    assert job["state"] == "running"
+    assert demo_client.get(f"/api/investigation/{job['id']}/report.zip").status_code == 409  # not ready yet
+    for _ in range(600):
+        job = demo_client.get(f"/api/investigation/{job['id']}").json()
+        if job["state"] != "running":
+            break
+        asyncio.run(asyncio.sleep(0.05))
+    assert job["state"] == "done", job
+    assert set(job["verification"].values()) == {"unavailable"}  # demo data is not on the real chain
+    page = demo_client.get(job["report_url"])
+    assert page.status_code == 200 and "پروندهٔ آزمایشی" in page.text and 'id="connections"' in page.text
+    assert demo_client.get(job["report_url"].replace("report.html", "graphs/focus_network.png")).status_code == 200
+    archive = demo_client.get(job["zip_url"])
+    assert archive.status_code == 200 and archive.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(archive.content)) as z:
+        assert "report.html" in z.namelist()
+    assert demo_client.get(f"/api/investigation/{job['id']}/files/../../.env").status_code == 404
+
+
+def test_investigation_api_rejects_bad_input(demo_client):
+    from app.providers import demo
+
+    assert demo_client.post("/api/investigation", json={"focus": [], "addresses": [demo.SCAMMER, demo.MULES[0]]}).status_code == 400
+    assert demo_client.post("/api/investigation", json={"focus": ["not-an-address"], "addresses": [demo.SCAMMER]}).status_code == 400
+    assert demo_client.get("/api/investigation/nope").status_code == 404

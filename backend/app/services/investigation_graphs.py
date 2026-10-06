@@ -809,7 +809,8 @@ def joint_timeline(inv: Investigation):
             0.15, (y + 0.44 + 0.55) / (len(focus) - 0.3 + 0.55),
             f"received {fmt_amount(total_in, token)} ({len(incoming)} tx)  ·  sent {fmt_amount(total_out, token)} "
             f"({len(outgoing)} tx)  ·  {ts[0].timestamp:%d %b %Y} to {ts[-1].timestamp:%d %b %Y}" if ts else "",
-            transform=ax.transAxes, ha="left", va="bottom", fontsize=8, color=INK_2,
+            transform=ax.transAxes, ha="left", va="bottom", fontsize=8, color=INK_2, zorder=6,
+            bbox={"boxstyle": "round,pad=0.15", "fc": SURFACE, "ec": "none", "alpha": 0.9},
         )  # fmt: skip
 
     between = [t for t in inv.focus_transfers if _is_token(inv, t)]

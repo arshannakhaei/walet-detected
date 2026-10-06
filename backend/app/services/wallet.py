@@ -19,7 +19,7 @@ from app.models import (
 )
 from app.providers import ProviderRegistry
 from app.services.pricing import PriceService
-from app.services.tokens import is_spam
+from app.services.tokens import is_spam, is_spam_token
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +186,10 @@ class WalletService:
     async def overview(self, chain: Chain, address: str) -> WalletOverview:
         transfers, truncated = await self.load_transfers(chain, address, quick=True)
         provider = self._provider(chain)
-        balances = await provider.get_balances(address)
+        # Airdropped advert and look-alike tokens are noise, not holdings.
+        balances = [
+            b for b in await provider.get_balances(address) if not is_spam_token(chain, b.token_symbol, b.token_contract)
+        ]
 
         clean = TransferFilter()
         flows: dict[tuple[str, str | None], TokenFlow] = {}

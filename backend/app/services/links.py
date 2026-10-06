@@ -39,6 +39,8 @@ MAX_MATCHES_PER_PATH = 20
 MAX_SHARED = 50
 MAX_PATHS = 200
 MAX_MEMBERS = 50
+# A member that dealt with this many addresses is an exchange or service wallet.
+SERVICE_COUNTERPARTIES = 500
 
 
 def split_addresses(value: list[str] | str) -> list[str]:
@@ -162,6 +164,12 @@ class MemberSummary(BaseModel):
     received_from_members: Decimal = Decimal(0)
     linked_members: int = 0
     group: int | None = Field(None, description="Members in the same group are connected by money flows.")
+    counterparty_count: int = 0
+    likely_service: bool = Field(
+        False,
+        description="Exchange/service wallet (labeled, or hundreds of counterparties): its transfers do not "
+        "show common ownership, so it does not join groups.",
+    )
     usdt_frozen: bool | None = Field(None, description="USDT frozen by Tether (None = unknown).")
     sanctioned: bool | None = Field(None, description="On a sanctions list (Chainalysis oracle; None = unknown).")
 
@@ -276,6 +284,10 @@ class LinkAnalyzer:
                     transfers, truncated = await self._wallets.load_transfers(chain, address)
                 summary.transfer_count = len(transfers)
                 summary.truncated = truncated
+                summary.counterparty_count = len({t.counterparty_for(address) for t in transfers} - {address})
+                summary.likely_service = (
+                    self._is_service(chain, address) or summary.counterparty_count >= SERVICE_COUNTERPARTIES
+                )
                 return [t for t in transfers if flt.matches(t, address)]
             except ProviderError as exc:
                 summary.error = str(exc)
@@ -322,13 +334,17 @@ class LinkAnalyzer:
         paths.sort(key=lambda p: (p.through_service, -len(p.matched), -p.matched_amount, -p.amount_out))
         paths = paths[:MAX_PATHS]
 
+        def personal(*addresses: str) -> bool:
+            return not any(summaries[a].likely_service for a in addresses)
+
         uf = _UnionFind()
         for link in direct:
-            uf.union(link.from_address, link.to_address)
             summaries[link.from_address].sent_to_members += link.total
             summaries[link.to_address].received_from_members += link.total
+            if personal(link.from_address, link.to_address):
+                uf.union(link.from_address, link.to_address)
         for p in paths:
-            if not p.through_service:
+            if not p.through_service and personal(p.from_address, p.to_address):
                 uf.union(p.from_address, p.to_address)
         linked: dict[str, set[str]] = {a: set() for a in members}
         for link in direct:

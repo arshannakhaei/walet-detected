@@ -241,3 +241,16 @@ def test_links_api_validation(demo_client):
     bad = demo_client.post("/api/links", json={"addresses": [demo.SCAMMER, "Tnotanaddress"]})
     assert bad.status_code == 400 and "Tnotanaddress" in bad.json()["detail"]
     assert demo_client.get("/api/links/nope").status_code == 404
+
+
+def test_exchange_like_member_does_not_join_groups():
+    # #1 behaves like an exchange hot wallet: it paid hundreds of addresses.
+    hot = X
+    payouts = [tr(1000 + i, hot, make_address(5000 + i), 10, i) for i in range(520)]
+    transfers = payouts + [tr(1, hot, Y, 500, 1), tr(2, hot, Z, 700, 2), tr(3, Y, W, 300, 10)]
+    report, _ = analyze(transfers, [hot, Y, Z, W])
+    by = {m.address: m for m in report.members}
+    assert by[hot].likely_service and by[hot].counterparty_count >= 500
+    assert len(report.direct) == 3  # still listed...
+    assert [sorted(g) for g in report.groups] == [sorted([Y, W])]  # ...but only Y-W is a real link
+    assert by[hot].group is None and by[Z].group is None

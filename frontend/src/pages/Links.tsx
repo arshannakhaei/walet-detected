@@ -46,6 +46,13 @@ function useNamer(report: LinkReport | undefined) {
 function buildSentences(r: LinkReport, name: (a: string) => string, t: (k: TKey) => string, lang: 'fa' | 'en') {
   const out: { text: Part[]; tone: 'strong' | 'normal' | 'weak'; tx?: string; money?: { amount: string; symbol: string; contract: string | null; at?: string } }[] = []
   for (const m of r.members) {
+    if (m.likely_service)
+      out.push({
+        text: fill(t('links_s_service'), { who: name(m.address), n: fmtNumber(m.counterparty_count, lang) }),
+        tone: 'weak',
+      })
+  }
+  for (const m of r.members) {
     if (m.usdt_frozen || m.sanctioned)
       out.push({
         text: fill(t(m.usdt_frozen ? 'links_s_frozen' : 'links_s_sanctioned'), { who: name(m.address) }),
@@ -480,6 +487,11 @@ function Results({ report: r }: { report: LinkReport }) {
                 <td className={td}>
                   <Address address={m.address} chain={r.chain} label={labelOf(m.address)} />
                   <SanctionBadges status={m} />
+                  {m.likely_service && (
+                    <Badge tone="violet" className="ms-1" title={t('links_service_help')}>
+                      {t('links_service')}
+                    </Badge>
+                  )}
                   {m.error && <div className="mt-1 text-xs text-[var(--critical)]">{m.error}</div>}
                 </td>
                 <td className={td}>

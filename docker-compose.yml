@@ -3,7 +3,11 @@
 # Docker does not make blockchain APIs faster; add free API keys in Settings for that.
 services:
   chaintrace:
-    build: .
+    build:
+      context: .
+      args:
+        # Set PIP_INDEX_URL in .env to build through a PyPI mirror (see README).
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     ports:
       - "127.0.0.1:8765:8765"   # reachable from this computer only
     environment:

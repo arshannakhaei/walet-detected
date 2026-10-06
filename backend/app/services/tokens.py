@@ -5,6 +5,9 @@ bulk to make wallets look funded or to poison address books. A transfer whose
 symbol matches a known token but whose contract does not is treated as spam.
 """
 
+import re
+import unicodedata
+
 from app.models import Chain, Transfer
 
 # chain -> contract (canonical form) -> symbol
@@ -63,13 +66,37 @@ def known_symbol(chain: Chain, contract: str | None) -> str | None:
     return KNOWN_TOKENS.get(chain, {}).get(contract)
 
 
+# Advert tokens airdropped to wallets: a website, Telegram handle or "buy ..." as the name.
+_ADVERT = re.compile(
+    r"https?:|www\.|t\.me|telegram|@|\bqq\b|\b(buy|claim|reward|airdrop|visit|gift|bonus|free)\b"
+    r"|\.\s*(com|net|org|xyz|top|vip|fun|cc|club|cn|c0m)\b|\s(com|c0m)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _lookalike(symbol: str) -> bool:
+    """Letters from other alphabets that look Latin (a Cyrillic "т" in "USDт")."""
+    for ch in symbol:
+        if ord(ch) > 127 and ch.isalpha():
+            name = unicodedata.name(ch, "")
+            if name.startswith(("CYRILLIC", "GREEK")) or "FULLWIDTH" in name or "MATHEMATICAL" in name:
+                return True
+    return False
+
+
+def is_spam_token(chain: Chain, symbol: str, contract: str | None) -> bool:
+    """A token that only exists to advertise or to impersonate a well-known one."""
+    if contract is None or known_symbol(chain, contract) is not None:
+        return False
+    clean = symbol.strip()
+    upper = clean.upper()
+    if upper in _PROTECTED or upper in {s.upper() for s in KNOWN_TOKENS.get(chain, {}).values()}:
+        return True  # a fake "USDT" with an unknown contract
+    return bool(_ADVERT.search(clean)) or _lookalike(clean)
+
+
 def is_spam(t: Transfer) -> bool:
-    """Zero-value transfers and look-alike tokens (known symbol, unknown contract)."""
+    """Zero-value transfers, advert tokens and look-alike tokens (known symbol, unknown contract)."""
     if t.amount == 0:
         return True
-    if t.token_contract is None:
-        return False
-    if known_symbol(t.chain, t.token_contract) is not None:
-        return False
-    symbol = t.token_symbol.upper().strip()
-    return symbol in _PROTECTED or symbol in {s.upper() for s in KNOWN_TOKENS.get(t.chain, {}).values()}
+    return is_spam_token(t.chain, t.token_symbol, t.token_contract)

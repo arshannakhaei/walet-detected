@@ -122,11 +122,20 @@ def short_tag(label: str, limit: int = 24) -> str:
     return label if len(label) <= limit else label[: limit - 1].rstrip() + "…"
 
 
+def _owner_name(inv: Investigation, address: str) -> str | None:
+    """Tag, label or inferred owner ("Nobitex (inferred)"), shortened for an image."""
+    if address in inv.labels:
+        return short_tag(inv.labels[address])
+    if address in inv.inferred:
+        return f"{inv.inferred[address].owner} (inferred)"
+    return None
+
+
 def node_name(inv: Investigation, address: str, tag: bool = True) -> str:
     text = short(address, _index(inv).get(address))
-    label = inv.labels.get(address)
-    if tag and label:
-        text += f"\n{short_tag(label)}"
+    owner = _owner_name(inv, address)
+    if tag and owner:
+        text += f"\n{owner}"
     return text
 
 
@@ -617,9 +626,9 @@ def flow(inv: Investigation, profile: FocusProfile, top: int = 9):
                 detail = f"{fmt_amount(amount, token)} · {share} · {count} tx"
             else:
                 name = node_name(inv, address, tag=False)
-                tag = inv.labels.get(address)
-                if tag:
-                    name += f"  ·  {short_tag(tag)}"
+                owner = _owner_name(inv, address)
+                if owner:
+                    name += f"  ·  {owner}"
                 detail = f"{fmt_amount(amount, token)} · {share} · {count} tx"
             mid = y - slot / 2
             ax.text(label_x, mid + 0.003, name, ha=ha, va="bottom", fontsize=8.6, color=INK,
@@ -660,6 +669,114 @@ def flow(inv: Investigation, profile: FocusProfile, top: int = 9):
         handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=4, fontsize=8,
         handletextpad=0.4, columnspacing=1.4, labelcolor=INK_2,
     )  # fmt: skip
+    return fig
+
+
+def exit_points(inv: Investigation):
+    """Entries -> key wallets -> exits, band height = amount, exchanges in yellow."""
+    _style()
+    token = inv.token
+    index = _index(inv)
+    focus = [p.address for p in inv.focus]
+    left = inv.entries[:12]
+    right = inv.exits[:12]
+    fig, ax = plt.subplots(figsize=(14, 2.2 + 0.62 * max(len(left), len(right), 4)))
+    ax.set_axis_off()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    x_left, x_mid, x_right = 0.235, 0.5, 0.765
+    gap, full = 0.012, 0.84
+    bar_w = 0.012
+
+    def total_of(a: str, role: str) -> Decimal:
+        t = next((x for x in inv.focus if x.address == a), None)
+        totals = next((r for r in t.totals if _same_token(inv, r.token_symbol, r.token_contract)), None) if t else None
+        return (totals.total_out if role == "exit" else totals.total_in) if totals else Decimal(0)
+
+    scale = float(max([e.total for e in left + right] + [total_of(a, r) for a in focus for r in ("exit", "entry")] + [Decimal(1)]))
+
+    def column(items, x, ha, label_x, role):
+        """Draw the bars of one side; returns {address: (top, height)} and the slot top per row."""
+        amounts = [float(e.total) for e in items]
+        slot_min = 0.055
+        room = full - gap * (len(items) - 1)
+        bars = [room * a / scale for a in amounts]
+        slots = [max(b, slot_min) for b in bars]
+        over = sum(slots) - room
+        if over > 0:
+            big = sum(h - slot_min for h in slots if h > slot_min) or 1.0
+            slots = [h - (h - slot_min) * min(1.0, over / big) if h > slot_min else h for h in slots]
+            bars = [min(b, h) for b, h in zip(bars, slots)]
+        y = 0.47 + (sum(slots) + gap * (len(slots) - 1)) / 2
+        spans = {}
+        for e, bar, slot in zip(items, bars, slots):
+            bar = max(bar, 0.004)
+            top = y - (slot - bar) / 2
+            color = _node_color(inv, e.address) if e.address in index else (EXCHANGE if (is_service(inv, e.address) or e.inference) else OUTSIDE)
+            ax.add_patch(Rectangle((x - bar_w / 2, top - bar), bar_w, bar, fc=color, ec="none", zorder=3))
+            spans[e.address] = (top, bar)
+            name = node_name(inv, e.address, tag=False)
+            owner = _owner_name(inv, e.address)
+            if owner:
+                name += f"  ·  {owner}"
+            if e.is_contract:
+                name += "  [contract]"
+            parts = " + ".join(f"#{f.index} {fmt_amount(f.total)}" for f in e.flows[:3])
+            detail = f"{fmt_amount(e.total, token)} · {sum(f.count for f in e.flows)} tx   ({parts})"
+            mid = y - slot / 2
+            ax.text(label_x, mid + 0.003, name, ha=ha, va="bottom", fontsize=8.3, color=INK,
+                    fontweight="bold" if e.address in index else "normal")  # fmt: skip
+            ax.text(label_x, mid - 0.005, detail, ha=ha, va="top", fontsize=7.4, color=INK_2)
+            y -= slot + gap
+        return spans
+
+    left_spans = column(left, x_left, "right", x_left - 0.012, "entry") if left else {}
+    right_spans = column(right, x_right, "left", x_right + 0.012, "exit") if right else {}
+
+    # Key wallets in the middle, each as tall as the larger of its inflow and outflow.
+    heights = [full / len(focus) * 0.86] * len(focus)
+    y = 0.47 + (sum(heights) + gap * (len(focus) - 1)) / 2
+    mid_spans = {}
+    for a, h in zip(focus, heights):
+        color = focus_color(inv, a)
+        ax.add_patch(FancyBboxPatch((x_mid - 0.03, y - h), 0.06, h, boxstyle="round,pad=0,rounding_size=0.008", fc=color, ec="none", zorder=4))
+        ax.text(x_mid, y - h / 2, f"#{index[a]}", ha="center", va="center", color="#ffffff", fontsize=13, fontweight="bold", zorder=5)
+        mid_spans[a] = (y, h)
+        y -= h + gap
+
+    # Ribbons: on each side, the key wallet's bar is divided in proportion to its flows.
+    for items, spans, side in ((left, left_spans, "entry"), (right, right_spans, "exit")):
+        cursors = {a: mid_spans[a][0] for a in focus}
+        totals = {a: total_of(a, side) for a in focus}
+        for e in items:
+            top, bar = spans[e.address]
+            inner = top
+            for f in sorted(e.flows, key=lambda f: f.index):
+                a = next(x.address for x in inv.focus if x.index == f.index)
+                frac = float(f.total / e.total) if e.total else 0.0
+                h_edge = bar * frac
+                h_mid = mid_spans[a][1] * (float(f.total / totals[a]) if totals[a] else 0.0)
+                color = focus_color(inv, a)
+                if side == "entry":
+                    _ribbon(ax, x_left + bar_w / 2, x_mid - 0.03, inner, inner - h_edge, cursors[a], cursors[a] - h_mid, color, alpha=0.35)
+                else:
+                    _ribbon(ax, x_mid + 0.03, x_right - bar_w / 2, cursors[a], cursors[a] - h_mid, inner, inner - h_edge, color, alpha=0.35)
+                cursors[a] -= h_mid
+                inner -= h_edge
+
+    ax.text(x_left, 0.955, f"WHERE THE {token} CAME FROM", ha="center", va="bottom", fontsize=9.2, color=INK_2, fontweight="bold")
+    ax.text(x_mid, 0.955, "KEY WALLETS", ha="center", va="bottom", fontsize=9.2, color=INK_2, fontweight="bold")
+    ax.text(x_right, 0.955, f"WHERE THE {token} WENT", ha="center", va="bottom", fontsize=9.2, color=INK_2, fontweight="bold")
+    ax.set_title(f"Entry and exit points of the key wallets' {token}", pad=14)
+    handles = _legend_handles(inv, {"member", "exchange", "outside", "service_member"})
+    handles[len(inv.focus):] = [
+        Line2D([], [], marker="o", ls="", ms=9, mfc=MEMBER, mec=SURFACE, label="Other wallet of the list"),
+        Line2D([], [], marker="s", ls="", ms=9, mfc=EXCHANGE, mec=SURFACE, label="Exchange / service (tagged, or owner inferred from evidence)"),
+        Line2D([], [], marker="o", ls="", ms=9, mfc=OUTSIDE, mec=SURFACE, label="Outside wallet without a name"),
+    ]
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=3, fontsize=8, handletextpad=0.4, columnspacing=1.4, labelcolor=INK_2)
+    ax.text(0.5, -0.07, "Band height = amount. Only the counterparties that carry most of each key wallet's flow are shown.",
+            transform=ax.transAxes, ha="center", va="top", fontsize=7.8, color=MUTED)  # fmt: skip
     return fig
 
 
@@ -1047,9 +1164,9 @@ def ranking_bar(inv: Investigation):
         ax.text(total + top * 0.012, y, text, va="center", ha="left", fontsize=7.8, color=INK if total else MUTED)
     labels = []
     for r in rows:
-        tag = inv.labels.get(r.address)
+        owner = _owner_name(inv, r.address)
         name = short(r.address, r.index)
-        labels.append(f"{name}  ({short_tag(tag, 18)})" if tag else name)
+        labels.append(f"{name}  ({owner})" if owner else name)
     ax.set_yticks(ys)
     ax.set_yticklabels(labels, fontsize=8.3)
     for tick, r in zip(ax.get_yticklabels(), rows):
@@ -1076,6 +1193,7 @@ def ranking_bar(inv: Investigation):
 def render_all(inv: Investigation, out_dir: Path) -> list[GraphFile]:
     """Write every graph as PNG and SVG into `out_dir`; returns them in report order."""
     files = [_save(focus_network(inv), out_dir, "focus_network", "Connections of the key wallets")]
+    files.append(_save(exit_points(inv), out_dir, "exit_points", "Entry and exit points of the key wallets"))
     files.append(_save(joint_timeline(inv), out_dir, "joint_timeline", "Activity of the key wallets over time"))
     for p in inv.focus:
         files.append(_save(flow(inv, p), out_dir, f"flow_{p.index}", f"Sources and destinations of #{p.index}"))

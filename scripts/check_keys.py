@@ -37,7 +37,7 @@ URLS = {
 # Every variable ChainTrace reads, plus keys collected for features still to come.
 KNOWN = {
     "HOST", "PORT", "DEMO_MODE", "SETTINGS_FROM_ANY_CLIENT", "DATABASE_URL",
-    "TRONGRID_BASE_URL", "TRONGRID_API_KEY", "TRON_REQUESTS_PER_SECOND",
+    "TRONGRID_BASE_URL", "TRONGRID_API_KEY", "TRON_REQUESTS_PER_SECOND", "TRONSCAN_BASE_URL",
     "ETHERSCAN_API_KEY", "ETHERSCAN_BASE_URL", "EVM_REQUESTS_PER_SECOND",
     "BITCOIN_API_URL", "BITCOIN_REQUESTS_PER_SECOND", "BITCOIN_MAX_TRANSACTIONS",
     "SOLANA_RPC_URL", "SOLANA_REQUESTS_PER_SECOND", "SOLANA_MAX_TRANSACTIONS", "ALCHEMY_API_KEY",
@@ -135,7 +135,7 @@ async def check_trongrid(client, env, urls) -> Result:
 
 async def check_tronscan(client, env, urls) -> Result:
     key = env.get("TRONSCAN_API_KEY", "")
-    r = Result("TronScan", "TRONSCAN_API_KEY", "unset", "not set (exchange tags for Tron addresses, coming next)", mask(key) if key else "")
+    r = Result("TronScan", "TRONSCAN_API_KEY", "unset", "not set (TronScan verification and exchange tags in investigation reports)", mask(key) if key else "")
     if not key:
         return r
     try:

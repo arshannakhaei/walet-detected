@@ -111,6 +111,15 @@ class _Ctx:
         self.has_toman = inv.toman.rate is not None or any(
             t.toman_then is not None for ts in inv.focus_history.values() for t in ts
         )
+        self.manual_toman = inv.toman.source == "manual"
+
+    def owner(self, address: str) -> str | None:
+        """Tag or label, else the owner worked out from evidence (marked as such)."""
+        if address in self.inv.labels:
+            return self.inv.labels[address]
+        if address in self.inv.inferred:
+            return f"{self.inv.inferred[address].owner} (استنباطی)"
+        return None
 
     def chip(self, address: str) -> str:
         """"#4" in the wallet's colour for list members; a short address for others."""
@@ -123,7 +132,7 @@ class _Ctx:
         return f'<a class="{cls}" href="{ADDRESS_URL.format(escape(address))}" target="_blank" rel="noopener" title="{escape(address)}"><bdi>#{i}</bdi></a>'
 
     def outside(self, address: str) -> str:
-        tag = self.inv.labels.get(address)
+        tag = self.owner(address)
         text = f'<a class="mono" href="{ADDRESS_URL.format(escape(address))}" target="_blank" rel="noopener" title="{escape(address)}"><bdi>{escape(short(address))}</bdi></a>'
         if tag:
             text += f' <bdi class="tag">{escape(tag)}</bdi>'
@@ -132,8 +141,9 @@ class _Ctx:
     def party(self, address: str) -> str:
         """Chip plus, for members, the tag (exchange name) when there is one."""
         text = self.chip(address)
-        if address in self.index and address in self.inv.labels:
-            text += f' <bdi class="tag">{escape(self.inv.labels[address])}</bdi>'
+        tag = self.owner(address) if address in self.index else None
+        if tag:
+            text += f' <bdi class="tag">{escape(tag)}</bdi>'
         return text
 
     def full(self, address: str) -> str:
@@ -147,7 +157,7 @@ class _Ctx:
 
     def strength(self, address: str) -> tuple[str, str]:
         """(css class, Persian words) for how much a shared wallet says about a link."""
-        if is_service(self.inv, address):
+        if is_service(self.inv, address) or address in self.inv.inferred:
             return "weak", "ضعیف (صرافی/سرویس)"
         return "mid", "قابل‌توجه (کیف بدون برچسب)"
 
@@ -280,10 +290,41 @@ def summary_sentences(ctx: _Ctx) -> list[str]:
         out.append(sentence + ".")
     contracts = [p for p in inv.focus if p.is_contract]
     for p in contracts:
-        out.append(
-            f"کیف {ctx.chip(p.address)} یک <b>حساب قرارداد هوشمند</b> است (نه کیف شخصی معمولی)؛ این نوع حساب را معمولاً "
-            "یک سرویس (صرافی یا درگاه پرداخت) برای هر مشتری می‌سازد و برداشت از آن با دستور همان سرویس انجام می‌شود."
-        )
+        inf = inv.inferred.get(p.address)
+        if inf:
+            out.append(
+                f"کیف {ctx.chip(p.address)} یک <b>حساب قرارداد هوشمند</b> است که آدرس {ctx.full(inv.contract_creators.get(p.address, ''))} "
+                f"آن را ساخته؛ همان آدرس در {day(inf.evidence_date) if inf.evidence_date else '—'} به آدرسِ سوزاندن حملهٔ <b>{escape(inf.owner)}</b> پول فرستاده است، "
+                f"یعنی {ctx.chip(p.address)} یک <b>آدرس واریز {escape(inf.owner)}</b> است (حساب کاربری در آن صرافی)."
+            )
+        else:
+            out.append(
+                f"کیف {ctx.chip(p.address)} یک <b>حساب قرارداد هوشمند</b> است (نه کیف شخصی معمولی)؛ این نوع حساب را معمولاً "
+                "یک سرویس (صرافی یا درگاه پرداخت) برای هر مشتری می‌سازد و برداشت از آن با دستور همان سرویس انجام می‌شود."
+            )
+    for p in inv.focus:
+        exits = [e for e in inv.exits if any(f.index == p.index for f in e.flows)]
+        named = [e for e in exits if ctx.owner(e.address) and not (e.index and e.address in ctx.focus)]
+        if not named:
+            continue
+        bits = []
+        for e in named[:3]:
+            f = next(x for x in e.flows if x.index == p.index)
+            bits.append(
+                f"<b>{escape(ctx.owner(e.address))}</b> ({amount(f.total, inv.token)} در {count(f.count)} انتقال، "
+                f"{num(f.share, 0)}٪ خروجی، {day(f.first_seen)} تا {day(f.last_seen)})"
+            )
+        out.append(f"خروجی کیف {ctx.chip(p.address)} به " + "؛ ".join(bits) + " رفته است.")
+    for p in inv.focus:
+        entries = [e for e in inv.entries if any(f.index == p.index for f in e.flows) and e.address not in ctx.focus]
+        named = [e for e in entries if ctx.owner(e.address)]
+        if not named:
+            continue
+        bits = []
+        for e in named[:3]:
+            f = next(x for x in e.flows if x.index == p.index)
+            bits.append(f"<b>{escape(ctx.owner(e.address))}</b> ({amount(f.total, inv.token)}، {num(f.share, 0)}٪ ورودی)")
+        out.append(f"ورودی کیف {ctx.chip(p.address)} از " + "، ".join(bits) + " آمده است.")
     services = [m for m in inv.members if m.likely_service or is_service(inv, m.address)]
     if services:
         names = "، ".join(ctx.party(m.address) for m in services)
@@ -341,7 +382,7 @@ def _token_totals(ctx: _Ctx, p: FocusProfile):
 def _transfer_rows(ctx: _Ctx, transfers: list[TransferRec], numbered: bool = True) -> tuple[list[str], list[list[str]]]:
     head = (["#"] if numbered else []) + ["تاریخ (UTC)", "از", "به", "مبلغ", "ارزش روز (دلار)"]
     if ctx.has_toman:
-        head.append("ارزش روز (تومان)")
+        head.append("ارزش به تومان (نرخ امروز)" if ctx.manual_toman else "ارزش روز (تومان)")
     head.append("تراکنش")
     rows = []
     for i, t in enumerate(transfers, start=1):
@@ -359,9 +400,105 @@ def _transfer_rows(ctx: _Ctx, transfers: list[TransferRec], numbered: bool = Tru
     return head, rows
 
 
-def section_connections(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
+def _exit_table(ctx: _Ctx, items, role: str) -> str:
+    """One card per entry/exit wallet (a table would be too wide for the evidence)."""
     inv = ctx.inv
-    parts = ['<section id="connections"><h2>۲. ارتباط کیف‌های اصلی با یکدیگر</h2>']
+    cards = []
+    for e in items:
+        owner = ctx.owner(e.address)
+        head = (ctx.party(e.address) if e.index else ctx.full(e.address))
+        badges = []
+        if owner and not e.index:
+            badges.append(f'<bdi class="tag">{escape(owner)}</bdi>')
+        if e.is_contract:
+            badges.append('<span class="pill mid">حساب قرارداد هوشمند</span>')
+        if e.transactions:
+            badges.append(f'<span class="pill">{count(e.transactions)} تراکنش در کل</span>')
+        lines = []
+        for f in e.flows:
+            txs = "، ".join(tx_link(t.tx_hash) for t in f.largest)
+            lines.append(
+                f"<li>{ctx.chip(next(p.address for p in inv.focus if p.index == f.index))} "
+                f"{'به آن' if role == 'exit' else 'از آن'} <b>{amount(f.total, inv.token)}</b> در {count(f.count)} انتقال "
+                f"({num(f.share, 0)}٪ {'خروجی' if role == 'exit' else 'ورودی'} این کیف اصلی)، از {day(f.first_seen)} تا {day(f.last_seen)}"
+                f'<div class="muted">بزرگ‌ترین تراکنش‌ها: {txs}</div></li>'
+            )
+        extra = []
+        if e.inference:
+            extra.append(f'<p class="note"><b>چرا {escape(e.inference.owner)}؟</b> {_basis_fa(ctx, e.inference)}</p>')
+        if e.downstream:
+            items_fa = "، ".join(
+                f"{ctx.outside(d.address)} ({amount(d.amount, inv.token)}، {count(d.count)} انتقال)" for d in e.downstream[:3]
+            )
+            extra.append(
+                f'<p class="muted">مقصد بعدی: در نمونهٔ {count(e.downstream_sampled)} انتقال خروجی اخیرِ این کیف، پول بیشتر به {items_fa} رفته است.</p>'
+            )
+        cards.append(
+            f'<div class="box exit"><div class="exit-head"><span>{head}</span><span class="badges">{" ".join(badges)}</span>'
+            f'<span class="sum">{amount(e.total, inv.token)}</span></div><ul>{"".join(lines)}</ul>{"".join(extra)}</div>'
+        )
+    return "".join(cards)
+
+
+def _basis_fa(ctx: _Ctx, inf) -> str:
+    """The inference's English basis, said in Persian with the evidence linked."""
+    inv = ctx.inv
+    b = inf.basis
+    tx = tx_link(inf.evidence_tx) if inf.evidence_tx else ""
+    when = day(inf.evidence_date) if inf.evidence_date else ""
+    if b.startswith("sent "):
+        amount_text = b.split(" ")[1]
+        return (
+            f"این کیف در {when} مبلغ <bdi>{escape(amount_text)}</bdi> {escape(inv.token)} به آدرس سوزاندن حملهٔ {escape(inf.owner)} فرستاده است "
+            f"(تراکنش {tx}). در آن حمله فقط کیف‌های تحت کنترل {escape(inf.owner)} خالی شدند؛ پس این کیف متعلق به {escape(inf.owner)} بوده است."
+        )
+    if b.startswith("deposit contract created by "):
+        creator = b.split(" ")[4].rstrip(",")
+        return (
+            f"این حساب قرارداد را آدرس {ctx.full(creator)} ساخته است و همان آدرس در {when} به آدرس سوزاندن حملهٔ {escape(inf.owner)} پول فرستاده "
+            f"(تراکنش {tx})؛ یعنی سازنده‌اش {escape(inf.owner)} است و این حساب یک آدرس واریز {escape(inf.owner)} است."
+        )
+    if b.startswith("receives "):
+        return (
+            f"{escape(b.split(' ')[1])} از خروجی حساب قرارداد واریزِ {escape(inf.owner)} به این کیف می‌رود؛ چنین کیفی کیف تجمیع همان صرافی است "
+            + (f"(شاهد: تراکنش {tx})." if tx else ".")
+        )
+    return f'<span class="en" dir="ltr">{escape(b)}</span>'
+
+
+def section_exits(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no, number: str) -> str:
+    inv = ctx.inv
+    token = escape(inv.token)
+    parts = [f'<section id="exits"><h2>{number} مسیر خروج و ورود پول کیف‌های اصلی</h2>']
+    parts.append(
+        '<p>برای هر کیف اصلی، طرف‌حساب‌هایی که بیشترِ پول از آن‌ها آمده یا به آن‌ها رفته، نام‌گذاری شده‌اند: با برچسب عمومی TronScan، '
+        "با فهرست داخلی، یا با شواهد زنجیره‌ای (مثلاً کیفی که در حملهٔ ۲۸ خرداد ۱۴۰۴ به نوبیتکس از آن پول به آدرس سوزاندن رفته، "
+        "کیف نوبیتکس بوده است). مواردی که «استنباطی» نوشته شده از این شواهد به دست آمده‌اند و شاهدشان ذکر شده است.</p>"
+    )
+    if "exit_points" in graphs:
+        parts.append(
+            figure(
+                graphs["exit_points"],
+                f"ورود و خروج {token} کیف‌های اصلی: ستون چپ منابع، ستون وسط کیف‌های اصلی، ستون راست مقصدها. ارتفاع هر نوار متناسب با مبلغ است؛ "
+                "مربع زرد یعنی صرافی/سرویس (با برچسب یا مالک استنباط‌شده)، خاکستری یعنی کیف بدون نام.",
+                fig_no(),
+            )
+        )
+    parts.append(f"<h3>مقصد پول (خروجی {token})</h3>")
+    parts.append(_exit_table(ctx, inv.exits, "exit") if inv.exits else '<p class="muted">خروجی‌ای ثبت نشده.</p>')
+    parts.append(f"<h3>منبع پول (ورودی {token})</h3>")
+    parts.append(_exit_table(ctx, inv.entries, "entry") if inv.entries else '<p class="muted">ورودی‌ای ثبت نشده.</p>')
+    parts.append(
+        '<p class="note">«بزرگ‌ترین‌ها» شناسهٔ سه تراکنش بزرگ هر رابطه است و با کلیک در TronScan باز می‌شود. '
+        "«مقصد بعدی» از نمونهٔ تازه‌ترین انتقال‌های خروجیِ آن کیف گرفته شده و برای کیف‌های بسیار پرتراکنش فقط تصویری تقریبی می‌دهد.</p>"
+    )
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def section_connections(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no, number: str = "۲.") -> str:
+    inv = ctx.inv
+    parts = [f'<section id="connections"><h2>{number} ارتباط کیف‌های اصلی با یکدیگر</h2>']
     parts.append(
         figure(
             graphs["focus_network"],
@@ -440,7 +577,7 @@ def section_connections(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
     return "".join(parts)
 
 
-def section_timeline(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
+def section_timeline(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no, number: str = "۳.") -> str:
     inv = ctx.inv
     rows = []
     for p in inv.focus:
@@ -459,7 +596,7 @@ def section_timeline(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
             ]
         )
     return (
-        '<section id="timeline"><h2>۳. روند فعالیت کیف‌های اصلی در طول زمان</h2>'
+        f'<section id="timeline"><h2>{number} روند فعالیت کیف‌های اصلی در طول زمان</h2>'
         + figure(
             graphs["joint_timeline"],
             f"هر ردیف یک کیف اصلی است و هر دایره یک انتقال {escape(inv.token)}: دایرهٔ توپر بالای خط = دریافت، دایرهٔ توخالی "
@@ -643,10 +780,10 @@ def _member_profile(ctx: _Ctx, mp: MemberProfile) -> str:
     )
 
 
-def section_list(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
+def section_list(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no, number: str = "۵.") -> str:
     inv = ctx.inv
     token = escape(inv.token)
-    parts = [f'<section id="list"><h2>۵. تحلیل کل فهرست ({count(len(inv.members))} کیف)</h2>']
+    parts = [f'<section id="list"><h2>{number} تحلیل کل فهرست ({count(len(inv.members))} کیف)</h2>']
     parts.append(
         figure(
             graphs["list_network"],
@@ -731,7 +868,7 @@ def section_list(ctx: _Ctx, graphs: dict[str, GraphFile], fig_no) -> str:
     return "".join(parts)
 
 
-def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
+def section_method(ctx: _Ctx, spot_checks: list[str], number: str = "۶.") -> str:
     inv = ctx.inv
     token = escape(inv.token)
     rows = []
@@ -740,6 +877,12 @@ def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
         if v is None:
             continue
         status = {"verified": ("ok", "✓ مطابق"), "mismatch": ("bad", "✗ مغایرت"), "unavailable": ("mid", "در دسترس نبود")}[v.status]
+        all_rows = "—"
+        if v.all_our_count is not None:
+            all_rows = f"{count(v.all_our_count)} / {count(v.all_scan_count)}"
+            if v.all_only_scan or v.all_only_ours:
+                all_rows += "<div>فقط در TronScan: " + ("، ".join(tx_link(h) for h in v.all_only_scan) or "—") + "</div>"
+                all_rows += "<div>فقط در دادهٔ ما: " + ("، ".join(tx_link(h) for h in v.all_only_ours) or "—") + "</div>"
         rows.append(
             [
                 ctx.chip(p.address),
@@ -749,6 +892,7 @@ def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
                 f'<span class="pill {status[0]}">{status[1]}</span>'
                 + (f'<div class="en" dir="ltr">{escape(v.note)}</div>' if v.note else "")
                 + (f"<div>فقط در دادهٔ ما: {count(len(v.only_ours))} · فقط در TronScan: {count(len(v.only_scan))}</div>" if v.status == "mismatch" else ""),
+                all_rows,
             ]
         )
     limits = [
@@ -768,12 +912,18 @@ def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
         limits.append(
             "نرخ تومان در زمان تهیهٔ گزارش در دسترس نبود (سرویس‌های Nobitex و Wallex از این شبکه پاسخ ندادند)؛ به همین دلیل ستون‌های تومان حذف شده‌اند."
         )
+    elif ctx.manual_toman:
+        limits.append(
+            f"<b>نرخ تومان به‌صورت دستی تنظیم شده است:</b> هر دلار = {toman(inv.toman.rate)}، تنظیم‌شده در تاریخ {day(inv.generated_at)} "
+            "(نرخ USDT/تومان صفحهٔ قیمت نوبیتکس در همان روز). چون نرخ‌های تاریخی در دسترس نبود، <b>همهٔ ارزش‌های تومانی با همین نرخ امروز</b> "
+            "محاسبه شده‌اند (ارزش دلاری روز انتقال × نرخ امروز)، نه با نرخ روز انتقال؛ برای انتقال‌های سال‌های ۱۴۰۰ تا ۱۴۰۲ این عدد از ارزش تومانی آن روز بیشتر است."
+        )
     focus_counts = "؛ ".join(
         f"{ctx.chip(p.address)}: {count(p.transfer_count)} انتقال سالم" + (f" و {count(p.spam_count)} هرزنامهٔ حذف‌شده" if p.spam_count else "")
         for p in inv.focus
     )
     parts = [
-        '<section id="method"><h2>۶. روش کار، منابع داده و محدودیت‌ها</h2>',
+        f'<section id="method"><h2>{number} روش کار، منابع داده و محدودیت‌ها</h2>',
         "<h3>روش کار</h3><ul>",
         f"<li>تاریخچهٔ <b>کامل</b> هر کیف اصلی از بلاکچین Tron دریافت شد ({focus_counts}). برای کیف‌های دیگر فهرست تازه‌ترین انتقال‌ها تا سقف مشخص دریافت شد.</li>",
         "<li>انتقال‌های ناموفق، انتقال با مبلغ صفر و توکن‌های جعلی/تبلیغاتی (مثلاً توکنی با نام USDT ولی قرارداد متفاوت) کنار گذاشته شدند.</li>",
@@ -785,9 +935,19 @@ def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
         "<li><b>TronScan</b>: منبع مستقل دوم برای راستی‌آزمایی اعداد، و برچسب عمومی آدرس‌ها (نام صرافی‌ها).</li>",
         "<li><b>قرارداد USDT</b>: وضعیت مسدودی هر آدرس (تابع isBlackListed).</li>",
         "<li><b>CoinGecko / Binance</b>: قیمت روزانهٔ TRX؛ <b>Nobitex</b>: نرخ روزانهٔ تومان (در صورت دسترسی).</li>",
+        '<li><b>گزارش‌های عمومی حملهٔ ۲۸ خرداد ۱۴۰۴ (18 June 2025) به صرافی نوبیتکس</b>: مهاجمان دارایی کیف‌های نوبیتکس را به آدرس‌های «سوزاندن» '
+        '(از جمله <bdi class="mono">TKFuckiRGCTerroristsNoBiTEXy2r7mNX</bdi>) فرستادند؛ این آدرس در فهرست داخلی برچسب خورده و هر کیفی که آن روز به آن پول فرستاده '
+        'کیف تحت کنترل نوبیتکس بوده است. منابع: <a href="https://www.scorechain.com/blog/nobitex-hack" target="_blank" rel="noopener">Scorechain</a>، '
+        '<a href="https://fortune.com/crypto/2025/06/18/nobitex-gonjeshke-darande-predatory-sparrow-iran-israel-hack/" target="_blank" rel="noopener">Fortune</a>.</li>',
         "</ul><h3>راستی‌آزمایی با TronScan</h3>",
         f"<p>برای هر کیف اصلی، همهٔ انتقال‌های {token} یک‌بار دیگر از TronScan گرفته و تک‌به‌تک (شناسهٔ تراکنش، فرستنده، گیرنده، مبلغ) با دادهٔ این گزارش مقایسه شد.</p>",
-        table(["کیف", "تعداد انتقال (ما / TronScan)", "جمع دریافتی (ما، TronScan)", "جمع ارسالی (ما، TronScan)", "نتیجه"], rows),
+        table(
+            ["کیف", f"تعداد انتقال {token} (ما / TronScan)", "جمع دریافتی (ما، TronScan)", "جمع ارسالی (ما، TronScan)", "نتیجه",
+             "همهٔ ردیف‌های TRC20 با هر توکن (ما / API ترون‌اسکن)"],
+            rows,
+        ),
+        '<p class="note">ستون آخر همهٔ انتقال‌های TRC20 را با هر توکنی (حتی هرزنامه) می‌شمارد و مقایسه را تک‌به‌تک با API ترون‌اسکن انجام می‌دهد؛ '
+        "شناسهٔ هر ردیفی که فقط در یک طرف باشد همان‌جا آمده است. شمارندهٔ صفحهٔ وب tronscan.org گاهی با API همان سایت یک عدد اختلاف دارد؛ ملاک، مقایسهٔ تک‌به‌تک است.</p>",
     ]
     if spot_checks:
         parts.append("<h3>بررسی دستی نمونه‌ها</h3><ul>" + "".join(f"<li>{c}</li>" for c in spot_checks) + "</ul>")
@@ -795,7 +955,7 @@ def section_method(ctx: _Ctx, spot_checks: list[str]) -> str:
     return "".join(parts)
 
 
-def section_appendix(ctx: _Ctx, files: list[str]) -> str:
+def section_appendix(ctx: _Ctx, files: list[str], number: str = "۷.") -> str:
     inv = ctx.inv
     rows = [[ctx.chip(m.address), ctx.full(m.address), "✓" if m.is_focus else ""] for m in inv.members]
     labelled = sorted(
@@ -818,7 +978,7 @@ def section_appendix(ctx: _Ctx, files: list[str]) -> str:
         ("حساب قرارداد هوشمند", "آدرسی که با کد اداره می‌شود، نه با کلید خصوصی یک شخص؛ معمولاً آدرس واریز ساخته‌شده توسط یک سرویس."),
     ]
     return (
-        '<section id="appendix"><h2>۷. پیوست</h2><h3>فهرست کامل آدرس‌ها</h3>'
+        f'<section id="appendix"><h2>{number} پیوست</h2><h3>فهرست کامل آدرس‌ها</h3>'
         + table(["#", "آدرس", "اصلی"], rows)
         + ("<h3>برچسب آدرس‌های بیرونی ذکرشده در گزارش</h3>" + table(["آدرس", "برچسب", "منبع"], lab_rows) if lab_rows else "")
         + "<h3>واژه‌نامه</h3><dl>"
@@ -894,6 +1054,8 @@ figcaption{color:var(--text-2);font-size:13.5px;margin-top:8px;line-height:1.85}
 .findings{padding:0;margin:8px 0;list-style:none}.findings li{padding:8px 0;border-bottom:1px solid var(--border)}.findings li:last-child{border:0}
 .en{color:var(--muted);font-size:12.5px;direction:ltr;text-align:left;font-family:"Segoe UI",system-ui,sans-serif;line-height:1.6;margin-top:2px}
 .box{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:10px 0}
+.exit-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:4px}.exit-head .sum{margin-inline-start:auto;font-weight:700}
+.exit ul{margin:4px 0}.exit li{margin:4px 0}
 dl{margin:8px 0}dt{font-weight:700;margin-top:8px}dd{margin:0;color:var(--text-2)}
 ul{padding-inline-start:22px;margin:8px 0}.files{columns:2}
 footer{color:var(--muted);font-size:12.5px;text-align:center;padding:14px 0 30px}
@@ -966,6 +1128,7 @@ def render_html(
     )
     toc = [
         ("summary", "خلاصهٔ مدیریتی"),
+        ("exits", "مسیر خروج و ورود پول"),
         ("connections", "ارتباط کیف‌های اصلی"),
         ("timeline", "روند زمانی"),
         *[(f"wallet-{p.index}", f"کیف #{p.index}") for p in inv.focus],
@@ -997,10 +1160,17 @@ def render_html(
         f"<bdi>{token}</bdi> هستند مگر خلافش ذکر شود.</p></section>"
     )
     # Built in reading order, so the figures are numbered as they appear.
-    body = cover + summary + section_connections(ctx, by_key, fig_no) + section_timeline(ctx, by_key, fig_no)
+    sec = iter(range(2, 20))
+
+    def no() -> str:
+        return f"{fa_digits(next(sec))}."
+
+    body = cover + summary + section_exits(ctx, by_key, fig_no, no())
+    body += section_connections(ctx, by_key, fig_no, no()) + section_timeline(ctx, by_key, fig_no, no())
+    profile_no = fa_digits(next(sec))
     for i, p in enumerate(inv.focus, start=1):
-        body += section_profile(ctx, p, by_key, fig_no, f"۴-{fa_digits(i)}.")
-    body += section_list(ctx, by_key, fig_no) + section_method(ctx, spot_checks or []) + section_appendix(ctx, data_files)
+        body += section_profile(ctx, p, by_key, fig_no, f"{profile_no}-{fa_digits(i)}.")
+    body += section_list(ctx, by_key, fig_no, no()) + section_method(ctx, spot_checks or [], no()) + section_appendix(ctx, data_files, no())
     return (
         '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'

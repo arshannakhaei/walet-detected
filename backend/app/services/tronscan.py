@@ -53,6 +53,11 @@ class Verification(BaseModel):
     only_ours: list[str] = []  # tx hashes we have and TronScan does not (at most 20)
     only_scan: list[str] = []
     note: str | None = None
+    # Every TRC20 token (spam included): the raw row counts of both sides.
+    all_our_count: int | None = None
+    all_scan_count: int | None = None
+    all_only_scan: list[str] = []  # tx hashes TronScan lists and we do not, any token
+    all_only_ours: list[str] = []
 
 
 class AccountInfo(BaseModel):
@@ -156,21 +161,17 @@ class TronScanClient:
             await asyncio.sleep(1.5 * (attempt + 1))
         raise TronScanError(f"TronScan request failed: {last}")
 
-    async def trc20_transfers(self, address: str, contract: str) -> tuple[list[ScanTransfer], int | None]:
-        """Every transfer of one TRC20 token involving `address`, and the total TronScan reports."""
+    async def trc20_transfers(self, address: str, contract: str | None) -> tuple[list[ScanTransfer], int | None]:
+        """Every transfer of one TRC20 token (or of all tokens, with `contract` None) involving
+        `address`, and the total TronScan reports."""
         out: list[ScanTransfer] = []
         reported: int | None = None
         start = 0
         while start < MAX_OFFSET:
-            data = await self._get(
-                "/token_trc20/transfers",
-                {
-                    "relatedAddress": address,
-                    "contract_address": contract,
-                    "limit": PAGE,
-                    "start": start,
-                },
-            )
+            params = {"relatedAddress": address, "limit": PAGE, "start": start}
+            if contract:
+                params["contract_address"] = contract
+            data = await self._get("/token_trc20/transfers", params)
             items = data.get("token_transfers") or []
             # TronScan answers "10000" when it has not counted; only a smaller number is a real count.
             if reported is None and isinstance(data.get("total"), int) and data["total"] < MAX_OFFSET:
@@ -181,7 +182,10 @@ class TronScanClient:
             start += PAGE
         raise TronScanError(f"more than {MAX_OFFSET} transfers: TronScan does not page that far")
 
-    async def verify(self, address: str, symbol: str, contract: str, ours: list[Transfer]) -> Verification:
+    async def verify(
+        self, address: str, symbol: str, contract: str, ours: list[Transfer], all_ours: list[Transfer] | None = None
+    ) -> Verification:
+        """`all_ours`: the wallet's raw TRC20 rows of every token, to compare the row counts too."""
         try:
             scan, reported = await self.trc20_transfers(address, contract)
         except TronScanError as exc:
@@ -191,7 +195,58 @@ class TronScanClient:
             return v
         v = compare(address, symbol, ours, scan)
         v.scan_reported_total = reported
+        if all_ours is not None:
+            try:
+                every, _ = await self.trc20_transfers(address, None)
+            except TronScanError as exc:
+                log.warning("all-token row count of %s skipped: %s", address, exc)
+                return v
+            mine = Counter((t.tx_hash, t.from_address, t.to_address) for t in all_ours)
+            theirs = Counter((t.tx_hash, t.from_address, t.to_address) for t in every)
+            v.all_our_count, v.all_scan_count = len(all_ours), len(every)
+            v.all_only_scan = sorted({k[0] for k in (theirs - mine)})[:20]
+            v.all_only_ours = sorted({k[0] for k in (mine - theirs)})[:20]
         return v
+
+    async def recent_transfers(
+        self, address: str, contract: str, outgoing: bool, limit: int = 200
+    ) -> list[ScanTransfer]:
+        """The newest `limit` transfers of one token sent by (or received by) an address."""
+        out: list[ScanTransfer] = []
+        start = 0
+        while len(out) < limit:
+            data = await self._get(
+                "/transfer/trc20",
+                {"address": address, "trc20Id": contract, "limit": PAGE, "start": start, "direction": 1 if outgoing else 2},
+            )
+            items = data.get("data") or []
+            for item in items:
+                if item.get("contract_ret") not in (None, "SUCCESS") or item.get("revert"):
+                    continue
+                out.append(
+                    ScanTransfer(
+                        tx_hash=item["hash"],
+                        timestamp=datetime.fromtimestamp(int(item["block_timestamp"]) / 1000, tz=timezone.utc),
+                        from_address=item["from"],
+                        to_address=item["to"],
+                        amount=Decimal(str(item["amount"])).scaleb(-int(item.get("decimals") or 6)),
+                    )
+                )
+            if len(items) < PAGE:
+                break
+            start += PAGE
+        return out[:limit]
+
+    async def contract_creator(self, address: str) -> str | None:
+        """The address that deployed a smart-contract account, if TronScan knows it."""
+        try:
+            data = await self._get("/contract", {"contract": address})
+        except TronScanError:
+            return None
+        rows = data.get("data") or []
+        creator = (rows[0].get("creator") or {}) if rows and isinstance(rows[0], dict) else {}
+        value = creator.get("address")
+        return value if isinstance(value, str) and value else None
 
     async def account(self, address: str) -> "AccountInfo | None":
         """Public facts TronScan shows for an address: name tag, contract or not."""

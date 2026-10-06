@@ -146,7 +146,7 @@ def test_bot_and_dashboard_share_finding_titles():
     import re
     from pathlib import Path
 
-    ts = (Path(__file__).resolve().parents[2] / "frontend/src/lib/findings.ts").read_text()
+    ts = (Path(__file__).resolve().parents[2] / "frontend/src/lib/findings.ts").read_text(encoding="utf-8")
     assert dict(re.findall(r"  (\w+): '([^']+)'", ts)) == texts.FINDING_FA
 
 

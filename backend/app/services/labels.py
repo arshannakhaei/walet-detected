@@ -49,6 +49,9 @@ class Label(BaseModel):
     category: LabelCategory
     note: str | None = None
     source: str  # "builtin" or "user"
+    # Who controls any wallet that sent funds here (a hack's burn address, an
+    # exchange's sweep target): lets a report name the owner of an unlabelled wallet.
+    implies: str | None = None
 
 
 def load_builtin_labels(directory: Path = LABELS_DIR) -> dict[tuple[Chain, str], Label]:
@@ -71,6 +74,7 @@ def load_builtin_labels(directory: Path = LABELS_DIR) -> dict[tuple[Chain, str],
                 category=LabelCategory(entry["category"]),
                 note=entry.get("note"),
                 source="builtin",
+                implies=entry.get("implies"),
             )
     return labels
 

@@ -42,5 +42,11 @@
     "name": "Exchange hot wallet (likely Binance)",
     "category": "exchange",
     "note": "From memory, not verified: check the tag on tronscan.org before relying on it."
+  },
+  "TKFuckiRGCTerroristsNoBiTEXy2r7mNX": {
+    "name": "Nobitex hack burn address (Predatory Sparrow, 2025-06-18)",
+    "category": "other",
+    "implies": "Nobitex",
+    "note": "Vanity address the attackers of the Iranian exchange Nobitex sent its funds to on 2025-06-18; the money is unrecoverable. Wallets that sent funds here that day were under Nobitex's control (public hack reports)."
   }
 }

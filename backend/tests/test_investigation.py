@@ -28,6 +28,9 @@ A, B, C, D, E = (make_address(n) for n in (501, 502, 503, 504, 505))  # the list
 MID = make_address(601)  # outside wallet both A and C dealt with
 EXCHANGE = make_address(602)
 SRC = make_address(603)
+BURN = make_address(604)  # a hack's burn address: whoever sent here was the hacked exchange
+FACTORY = make_address(605)  # deployed B's contract account
+SWEEP = make_address(606)  # where B's money is swept to
 MEMBERS = [D, A, B, E, C]  # list order: D=#1, A=#2, B=#3, E=#4, C=#5
 
 
@@ -61,6 +64,12 @@ TRANSFERS = [
     tr(11, SRC, A, 0, 8),  # zero value: spam
     tr(12, A, B, 55, 9, success=False),  # failed
     tr(13, E, D, 30, 10),  # between two non-key members
+    tr(14, B, SWEEP, 49, 42),  # B (a deposit contract) sweeps part of its money here
+]
+# Transfers TronScan knows about outside the members' histories (what the exit wallets did next).
+OUTSIDE = [
+    tr(101, FACTORY, BURN, 0.01, 900),  # the factory that created B paid the hack's burn address
+    tr(102, SWEEP, SRC, 5000, 100),
 ]
 
 
@@ -93,6 +102,9 @@ class FakeLabels:
     def get(self, chain, address):
         if address == EXCHANGE:
             return Label(chain=chain, address=address, name="Exchange X", category=LabelCategory.EXCHANGE, source="builtin")
+        if address == BURN:
+            return Label(chain=chain, address=address, name="ExchangeZ hack burn address", category=LabelCategory.OTHER,
+                         source="builtin", implies="ExchangeZ")  # fmt: skip
         return None
 
 
@@ -121,16 +133,33 @@ class FakeTronScan:
         self.drop = drop  # tx hash TronScan "does not know"
 
     async def account(self, address):
-        return AccountInfo(address=address, tag="Binance-Hot 9" if address == SRC else None, is_contract=address == B)
+        return AccountInfo(address=address, tag="Binance-Hot 9" if address == SRC else None, is_contract=address == B,
+                           transactions=12345 if address == SWEEP else None)  # fmt: skip
 
-    async def verify(self, address, symbol, contract, ours):
+    async def recent_transfers(self, address, contract, outgoing, limit=200):
+        rows = [t for t in self.wallets.transfers + OUTSIDE if t.token_contract == contract and t.success and t.amount > 0]
+        rows = [t for t in rows if (t.from_address if outgoing else t.to_address) == address]
+        return [
+            ScanTransfer(tx_hash=t.tx_hash, timestamp=t.timestamp, from_address=t.from_address, to_address=t.to_address, amount=t.amount)
+            for t in sorted(rows, key=lambda t: t.timestamp, reverse=True)[:limit]
+        ]
+
+    async def contract_creator(self, address):
+        return FACTORY if address == B else None
+
+    async def verify(self, address, symbol, contract, ours, all_ours=None):
         scan = [
             ScanTransfer(tx_hash=t.tx_hash, timestamp=t.timestamp, from_address=t.from_address, to_address=t.to_address, amount=t.amount)
             for t in self.wallets.transfers
             if address in (t.from_address, t.to_address) and t.token_contract == contract and t.success and t.amount > 0
             and t.tx_hash != self.drop
         ]  # fmt: skip
-        return compare(address, symbol, ours, scan)
+        v = compare(address, symbol, ours, scan)
+        if all_ours is not None:
+            v.all_our_count = len(all_ours)
+            v.all_scan_count = len(all_ours) + (1 if address == A else 0)
+            v.all_only_scan = ["ff" * 32] if address == A else []
+        return v
 
 
 def investigate(wallets=None, values=None, tronscan="default", focus=(A, B, C), members=MEMBERS):
@@ -234,6 +263,26 @@ def test_monthly_series_fills_empty_months_and_keeps_a_running_balance(inv):
     assert inv.focus[0].monthly["TRX"][0].amount_out == Decimal("7")
 
 
+def test_exit_points_name_the_owner_from_evidence(inv):
+    exits = {e.address: e for e in inv.exits}
+    entries = {e.address: e for e in inv.entries}
+    # A's money went to B (a key wallet) and MID; B's to EXCHANGE and SWEEP; C's to E.
+    assert set(exits) >= {B, MID, SWEEP, EXCHANGE, E}
+    b_sweep = exits[SWEEP]
+    assert b_sweep.flows[0].index == 3 and b_sweep.flows[0].total == Decimal("49") and round(b_sweep.flows[0].share) == 10
+    assert b_sweep.transactions == 12345 and b_sweep.downstream[0].address == SRC and b_sweep.downstream[0].label == "Binance-Hot 9"
+    # B is a contract created by FACTORY, which paid the hack's burn address: B belongs to ExchangeZ.
+    assert inv.contract_creators[B] == FACTORY
+    assert inv.inferred[B].owner == "ExchangeZ" and inv.inferred[FACTORY].evidence_tx == f"{101:064x}"
+    assert "deposit contract created by" in inv.inferred[B].basis
+    assert inv.inferred[FACTORY].basis.startswith("sent 0.01 USDT to ExchangeZ hack burn address")
+    assert entries[SRC].label == "Binance-Hot 9" and entries[SRC].flows[0].share == Decimal("1000") / Decimal("1050") * 100
+    assert all(e.role == "entry" for e in inv.entries) and all(e.role == "exit" for e in inv.exits)
+    assert inv.exits == sorted(inv.exits, key=lambda e: e.total, reverse=True)
+    v = inv.focus[0].verification
+    assert (v.all_our_count, v.all_scan_count, v.all_only_scan) == (8, 9, ["ff" * 32])  # raw rows: spam and failed included
+
+
 def test_truncated_and_missing_toman_are_reported():
     result = investigate(FakeWallets(truncated={D}), values=FakeValues(toman=False))
     assert any("#1" in w and "700" in w for w in result.warnings)
@@ -334,7 +383,7 @@ def report_dir(inv, tmp_path_factory):
 
 def test_graph_files_are_print_quality(report_dir, inv):
     out, _ = report_dir
-    keys = ["focus_network", "joint_timeline", "list_network", "matrix_heatmap", "ranking_bar"]
+    keys = ["focus_network", "exit_points", "joint_timeline", "list_network", "matrix_heatmap", "ranking_bar"]
     keys += [f"{kind}_{p.index}" for p in inv.focus for kind in ("flow", "timeline")]
     for key in keys:
         png, svg = out / "graphs" / f"{key}.png", out / "graphs" / f"{key}.svg"
@@ -349,7 +398,7 @@ def test_graph_files_are_print_quality(report_dir, inv):
 
 def test_render_all_returns_files_in_report_order(inv, tmp_path):
     files = render_all(inv, tmp_path)
-    assert [f.key for f in files][:4] == ["focus_network", "joint_timeline", "flow_2", "timeline_2"]
+    assert [f.key for f in files][:4] == ["focus_network", "exit_points", "joint_timeline", "flow_2"]
     assert all(f.png.exists() and f.svg.exists() and f.width > 0 for f in files)
 
 
@@ -357,20 +406,23 @@ def test_html_has_every_section_and_no_outside_resources(report_dir, inv):
     out, _ = report_dir
     html = (out / "report.html").read_text(encoding="utf-8")
     assert html.startswith("<!doctype html>") and '<html lang="fa" dir="rtl">' in html
-    for section in ("cover", "summary", "connections", "timeline", "wallet-2", "wallet-3", "wallet-5", "list", "method", "appendix"):
+    for section in ("cover", "summary", "exits", "connections", "timeline", "wallet-2", "wallet-3", "wallet-5", "list", "method", "appendix"):
         assert f'id="{section}"' in html, section
     for words in ("خلاصهٔ مدیریتی", "ارتباط کیف‌های اصلی", "راستی‌آزمایی با TronScan", "محدودیت‌ها", "واژه‌نامه", "نمونهٔ دستی"):
         assert words in html, words
     for key in ("focus_network", "joint_timeline", "flow_2", "timeline_5", "list_network", "matrix_heatmap", "ranking_bar"):
         assert f'src="graphs/{key}.png"' in html and f'href="graphs/{key}.svg" download' in html
     assert "✓ مطابق" in html and "✗ مغایرت" not in html
+    assert "ff" * 32 in html  # the TRC20 row TronScan has and we do not is named in the verification table
+    assert "ExchangeZ (استنباطی)" in html and "چرا ExchangeZ؟" in html  # the inferred owner, with its evidence
+    assert "نرخ تومان به‌صورت دستی تنظیم شده است" in html
     assert A in html and f"{2:064x}" in html  # full addresses and transaction links
     assert "۱۴۰۵/۰۷/۱۴" in html  # the case date
     # Works offline: the only links that leave the folder are TronScan's.
     import re
 
-    outside = set(re.findall(r'(?:src|href)="(https?://[^"/]+)', html))
-    assert outside <= {"https://tronscan.org"}
+    assert not re.findall(r'src="https?://', html)  # no outside images or scripts
+    assert set(re.findall(r'href="(https?://[^"/]+)', html)) <= {"https://tronscan.org", "https://www.scorechain.com", "https://fortune.com"}
     assert "<link" not in html and "@import" not in html
     assert "تومان" in html  # the toman column is there when rates are known
 
@@ -388,7 +440,8 @@ def test_summary_states_the_strongest_facts(inv):
     assert "۲ انتقال" in text and "۵۰۰٫۵" in text  # A -> B: two transfers, 500.5 USDT
     assert "هیچ انتقال مستقیم" in text  # A-C and B-C have none
     assert short(MID) in text  # ... but A and C share an unlabelled wallet
-    assert "حساب قرارداد هوشمند" in text  # B is a contract account
+    assert "حساب قرارداد هوشمند" in text and "آدرس واریز ExchangeZ" in text  # B is a contract account of ExchangeZ
+    assert "خروجی کیف" in text and "ExchangeZ (استنباطی)" in text
     assert "دقیقاً مطابقت" in text
 
 

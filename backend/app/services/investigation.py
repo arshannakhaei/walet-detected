@@ -40,6 +40,9 @@ MEMBER_LIMIT = 5_000  # per other list member
 TOP_PARTIES = 15
 LARGEST = 20
 MOST_CONNECTED = 3
+EXIT_SHARE = Decimal("0.95")  # counterparties covering this share of a focus wallet's flow are its entry/exit points
+MAX_EXITS_PER_WALLET = 8
+SAMPLE_TRANSFERS = 200  # outgoing transfers of an exit wallet looked at to see where the money goes next
 MAX_TAG_LOOKUPS = 150  # addresses whose TronScan name tag is looked up
 
 
@@ -185,6 +188,56 @@ class MemberProfile(BaseModel):
     partners: list[PartnerFlow]
 
 
+class ExitFlow(BaseModel):
+    """What one focus wallet moved to (or received from) an entry/exit wallet."""
+
+    index: int  # the focus wallet's list number
+    total: Decimal
+    count: int
+    first_seen: datetime
+    last_seen: datetime
+    share: Decimal  # of the focus wallet's total outflow (or inflow), 0-100
+    largest: list[TransferRec]  # at most 3
+
+
+class Downstream(BaseModel):
+    """Where an exit wallet sent money next (from a sample of its newest outgoing transfers)."""
+
+    address: str
+    label: str | None = None
+    amount: Decimal
+    count: int
+    last_seen: datetime
+    tx_hash: str  # of the largest transfer
+
+
+class Inference(BaseModel):
+    owner: str  # e.g. "Nobitex"
+    basis: str  # short English explanation of how the owner was inferred
+    evidence_tx: str | None = None  # a transaction that shows it
+    evidence_date: datetime | None = None
+
+
+class ExitPoint(BaseModel):
+    """A wallet the focus wallets' money went to (role "exit") or came from (role "entry")."""
+
+    role: str
+    address: str
+    index: int | None = None  # list number when it is a member
+    label: str | None = None  # tag or label name
+    category: str | None = None
+    label_source: str | None = None  # builtin / user / tronscan
+    inference: Inference | None = None  # owner worked out from on-chain evidence when there is no tag
+    is_contract: bool | None = None
+    transactions: int | None = None  # TronScan's total transaction count (size of the wallet)
+    flows: list[ExitFlow]
+    total: Decimal
+    downstream: list[Downstream] = []
+    downstream_sampled: int = 0  # outgoing transfers looked at
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+
+
 class Investigation(BaseModel):
     generated_at: datetime
     chain: Chain
@@ -201,6 +254,10 @@ class Investigation(BaseModel):
     most_connected: list[MemberProfile]
     links_focus: LinkReport  # the focus wallets alone, with three-hop paths
     links_all: LinkReport
+    exits: list[ExitPoint] = []  # where the focus wallets' money went, largest first
+    entries: list[ExitPoint] = []  # where it came from
+    contract_creators: dict[str, str] = {}  # focus wallet -> address that deployed it (contract accounts)
+    inferred: dict[str, Inference] = {}  # address -> owner worked out from evidence
     labels: dict[str, str]  # address -> name, for every labelled address mentioned
     categories: dict[str, str]
     label_sources: dict[str, str] = {}  # "builtin", "user" or "tronscan"
@@ -468,21 +525,6 @@ class Investigator:
             for r in others
         ]
 
-        # --- verification against TronScan ----------------------------------------------
-        if self._tronscan is not None and chain == Chain.TRON and contract is not None:
-            step("verification", 0, len(focus))
-            for n, p in enumerate(profiles, start=1):
-                ours = [t for t in clean[p.address] if t.token_contract == contract]
-                p.verification = await self._tronscan.verify(p.address, token, contract, ours)
-                step("verification", n, len(focus))
-        else:
-            for p in profiles:
-                ours = [t for t in clean[p.address] if _is_token(t, contract, token)]
-                p.verification = compare(p.address, token, ours, None)
-                p.verification.note = "TronScan verification is available for Tron tokens only"
-
-        # --- values and labels ------------------------------------------------------------
-        focus_history = {a: await self._records(chain, sorted(clean[a], key=lambda t: t.timestamp), index) for a in focus}
         mentioned = set(members)
         for p in profiles:
             mentioned.update(s.address for s in p.top_senders + p.top_receivers)
@@ -495,6 +537,29 @@ class Investigator:
             if label is not None:
                 names[a], categories[a], sources[a] = label.name, label.category.value, label.source
 
+        # --- entry and exit points of the focus wallets -----------------------------------
+        step("exits", 0, 1)
+        exits, entries, creators, inferred = await self._exit_points(
+            chain, focus, index, clean, contract, token, labels, infos
+        )
+        step("exits", 1, 1)
+
+        # --- verification against TronScan ----------------------------------------------
+        if self._tronscan is not None and chain == Chain.TRON and contract is not None:
+            step("verification", 0, len(focus))
+            for n, p in enumerate(profiles, start=1):
+                ours = [t for t in clean[p.address] if t.token_contract == contract]
+                all_ours = [t for t in histories[p.address][0] if t.token_contract is not None]
+                p.verification = await self._tronscan.verify(p.address, token, contract, ours, all_ours)
+                step("verification", n, len(focus))
+        else:
+            for p in profiles:
+                ours = [t for t in clean[p.address] if _is_token(t, contract, token)]
+                p.verification = compare(p.address, token, ours, None)
+                p.verification.note = "TronScan verification is available for Tron tokens only"
+
+        # --- values and labels ------------------------------------------------------------
+        focus_history = {a: await self._records(chain, sorted(clean[a], key=lambda t: t.timestamp), index) for a in focus}
         toman = await self._values.toman_now()
         if toman.rate is None:
             warnings.append("toman rate unavailable (Nobitex and Wallex unreachable, no USD_TOMAN_RATE set)")
@@ -515,12 +580,201 @@ class Investigator:
             most_connected=most_connected,
             links_focus=links_focus,
             links_all=links_all,
+            exits=exits,
+            entries=entries,
+            contract_creators=creators,
+            inferred=inferred,
             labels=names,
             categories=categories,
             label_sources=sources,
             toman=toman,
             warnings=warnings,
         )
+
+    async def _exit_points(
+        self, chain, focus, index, clean, contract, token, labels, infos
+    ) -> tuple[list[ExitPoint], list[ExitPoint], dict[str, str], dict[str, Inference]]:
+        """Who the focus wallets' money went to and came from, with the owner worked out
+        where the chain gives evidence (name tags, a known sweep/burn target, the contract's creator)."""
+        scan = self._tronscan if chain == Chain.TRON else None
+        inferred: dict[str, Inference] = {}
+        creators: dict[str, str] = {}
+
+        async def sample_out(address: str) -> list:
+            if scan is None or not contract:
+                return []
+            try:
+                return await scan.recent_transfers(address, contract, outgoing=True, limit=SAMPLE_TRANSFERS)
+            except Exception as exc:  # a TronScan hiccup costs an inference, not the report
+                log.info("outgoing sample of %s skipped: %s", address, exc)
+                return []
+
+        async def owner_of(address: str, depth: int = 0) -> Inference | None:
+            """Where the wallet sent money to a target that implies an owner (a hack's burn
+            address, a known sweep wallet); for a contract account, who deployed it."""
+            if address in inferred:
+                return inferred[address]
+            label = labels.get(chain, address)
+            if label is not None and label.category.value in ("exchange", "service"):
+                return None  # a name is better than an inference
+            found: Inference | None = None
+            for t in sorted(await sample_out(address), key=lambda t: t.timestamp, reverse=True):
+                target = labels.get(chain, t.to_address)
+                if target is not None and target.implies:
+                    found = Inference(
+                        owner=target.implies,
+                        basis=f"sent {t.amount} {token} to {target.name} on {t.timestamp:%Y-%m-%d}",
+                        evidence_tx=t.tx_hash,
+                        evidence_date=t.timestamp,
+                    )
+                    break
+            if scan is not None and address not in infos:
+                info = await scan.account(address)
+                if info is not None:
+                    infos[address] = info
+            info = infos.get(address)
+            if found is None and scan is not None and info is not None and info.is_contract and depth < 1:
+                creator = await scan.contract_creator(address)
+                if creator:
+                    creators[address] = creator
+                    upstream = await owner_of(creator, depth + 1)
+                    creator_label = labels.get(chain, creator)
+                    owner = upstream.owner if upstream else (creator_label.name if creator_label else None)
+                    if owner:
+                        found = Inference(
+                            owner=owner,
+                            basis=f"deposit contract created by {creator}, a wallet of {owner}",
+                            evidence_tx=upstream.evidence_tx if upstream else None,
+                            evidence_date=upstream.evidence_date if upstream else None,
+                        )
+            if found is not None:
+                inferred[address] = found
+            return found
+
+        # Which counterparties matter: the ones that carry most of each focus wallet's flow.
+        parties: dict[tuple[str, str], dict[str, list[Transfer]]] = defaultdict(lambda: defaultdict(list))
+        totals: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
+        for a in focus:
+            for t in clean[a]:
+                if not _is_token(t, contract, token):
+                    continue
+                if t.from_address == a:
+                    parties[("exit", t.to_address)][a].append(t)
+                    totals[("exit", a)] += t.amount
+                elif t.to_address == a:
+                    parties[("entry", t.from_address)][a].append(t)
+                    totals[("entry", a)] += t.amount
+        chosen: dict[str, set[str]] = {"exit": set(), "entry": set()}
+        for role in ("exit", "entry"):
+            for a in focus:
+                ranked = sorted(
+                    (
+                        (other, sum((t.amount for t in by_focus[a]), Decimal(0)))
+                        for (r, other), by_focus in parties.items()
+                        if r == role and a in by_focus
+                    ),
+                    key=lambda kv: kv[1],
+                    reverse=True,
+                )
+                running = Decimal(0)
+                for n, (other, amount) in enumerate(ranked):
+                    if n >= MAX_EXITS_PER_WALLET or (n > 0 and running >= totals[(role, a)] * EXIT_SHARE):
+                        break
+                    chosen[role].add(other)
+                    running += amount
+
+        for a in focus:  # a focus wallet that is a contract account: find its owner first
+            if infos.get(a) and infos[a].is_contract:
+                await owner_of(a)
+
+        out: dict[str, list[ExitPoint]] = {"exit": [], "entry": []}
+        for role in ("exit", "entry"):
+            for other in chosen[role]:
+                by_focus = parties[(role, other)]
+                flows = []
+                for a in focus:
+                    ts = by_focus.get(a)
+                    if not ts:
+                        continue
+                    total = sum((t.amount for t in ts), Decimal(0))
+                    largest = sorted(ts, key=lambda t: t.amount, reverse=True)[:3]
+                    flows.append(
+                        ExitFlow(
+                            index=index[a],
+                            total=total,
+                            count=len(ts),
+                            first_seen=min(t.timestamp for t in ts),
+                            last_seen=max(t.timestamp for t in ts),
+                            share=(total / totals[(role, a)] * 100) if totals[(role, a)] else Decimal(0),
+                            largest=await self._records(chain, largest, index),
+                        )
+                    )
+                label = labels.get(chain, other)
+                inference = None if other in focus else await owner_of(other)
+                if inference is None and role == "exit":
+                    # The sweep target of a deposit contract belongs to the contract's owner.
+                    for a in focus:
+                        f = next((x for x in flows if x.index == index[a]), None)
+                        if f and f.share >= 90 and a in inferred and infos.get(a) and infos[a].is_contract:
+                            inference = Inference(
+                                owner=inferred[a].owner,
+                                basis=f"receives {f.share:.0f}% of what leaves deposit contract #{index[a]} ({inferred[a].owner})",
+                                evidence_tx=inferred[a].evidence_tx,
+                                evidence_date=inferred[a].evidence_date,
+                            )
+                            inferred[other] = inference
+                            break
+                downstream: list[Downstream] = []
+                sampled = 0
+                if role == "exit" and other not in focus:
+                    sample = await sample_out(other)
+                    sampled = len(sample)
+                    grouped: dict[str, list] = defaultdict(list)
+                    for t in sample:
+                        grouped[t.to_address].append(t)
+                    for to, ts in sorted(grouped.items(), key=lambda kv: -sum(t.amount for t in kv[1]))[:5]:
+                        to_label = labels.get(chain, to)
+                        biggest = max(ts, key=lambda t: t.amount)
+                        downstream.append(
+                            Downstream(
+                                address=to,
+                                label=to_label.name if to_label else (f"{inferred[to].owner} (inferred)" if to in inferred else None),
+                                amount=sum((t.amount for t in ts), Decimal(0)),
+                                count=len(ts),
+                                last_seen=max(t.timestamp for t in ts),
+                                tx_hash=biggest.tx_hash,
+                            )
+                        )
+                info = infos.get(other)
+                all_ts = [t for ts in by_focus.values() for t in ts]
+                out[role].append(
+                    ExitPoint(
+                        role=role,
+                        address=other,
+                        index=index.get(other),
+                        label=label.name if label else None,
+                        category=label.category.value if label else None,
+                        label_source=label.source if label else None,
+                        inference=inference,
+                        is_contract=info.is_contract if info else None,
+                        transactions=info.transactions if info else None,
+                        flows=sorted(flows, key=lambda f: f.total, reverse=True),
+                        total=sum((f.total for f in flows), Decimal(0)),
+                        downstream=downstream,
+                        downstream_sampled=sampled,
+                        first_seen=min(t.timestamp for t in all_ts),
+                        last_seen=max(t.timestamp for t in all_ts),
+                    )
+                )
+            out[role].sort(key=lambda e: e.total, reverse=True)
+        # Owners worked out late in the loop apply to earlier rows too.
+        for e in out["exit"] + out["entry"]:
+            for d in e.downstream:
+                if d.label is None and d.address in inferred:
+                    d.label = f"{inferred[d.address].owner} (inferred)"
+            if e.inference is None and e.address in inferred:
+                e.inference = inferred[e.address]
+        return out["exit"], out["entry"], creators, inferred
 
     @staticmethod
     def _token_contract(chain: Chain, token: str, transfers: list[Transfer]) -> str | None:

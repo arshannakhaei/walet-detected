@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from app.models import Chain, Transfer
 from app.providers import ProviderError, ProviderRegistry
 from app.services.fx import TomanRate, ValueService
-from app.services.labels import TERMINAL_CATEGORIES, LabelService
+from app.services.labels import TERMINAL_CATEGORIES, Label, LabelCategory, LabelService
 from app.services.links import LinkAnalyzer, LinkParams, LinkReport
 from app.services.risk import Finding, WalletStats, _level, analyze_transfers, timeline, wallet_stats
 from app.services.tokens import is_spam, known_symbol
@@ -40,7 +40,7 @@ MEMBER_LIMIT = 5_000  # per other list member
 TOP_PARTIES = 15
 LARGEST = 20
 MOST_CONNECTED = 3
-MAX_TAG_LOOKUPS = 120  # outside addresses whose TronScan name tag is looked up
+MAX_TAG_LOOKUPS = 150  # addresses whose TronScan name tag is looked up
 
 
 class TransferRec(BaseModel):
@@ -231,6 +231,20 @@ class _Snapshot:
         return await self._wallets.load_transfers(chain, address, **kwargs)
 
 
+class _TaggedLabels:
+    """The label service plus name tags looked up on TronScan for this report."""
+
+    def __init__(self, base: LabelService, chain: Chain, tags: dict[str, str]):
+        self._base = base
+        self._tags = {
+            a: Label(chain=chain, address=a, name=tag, category=LabelCategory(tag_category(tag)), source="tronscan")
+            for a, tag in tags.items()
+        }
+
+    def get(self, chain: Chain, address: str) -> Label | None:
+        return self._base.get(chain, address) or self._tags.get(address)
+
+
 def _clean(transfers: list[Transfer]) -> list[Transfer]:
     return [t for t in transfers if t.success and not is_spam(t) and t.from_address != t.to_address]
 
@@ -355,9 +369,21 @@ class Investigator:
         contract = self._token_contract(chain, token, [t for ts, _ in histories.values() for t in ts])
         clean = {a: _clean(ts) for a, (ts, _) in histories.items()}
 
+        # --- name tags (before the link analysis, so exchanges are treated as such) -------
+        infos: dict[str, AccountInfo] = {}
+        if self._tronscan is not None and chain == Chain.TRON:
+            lookups = self._tag_candidates(chain, focus, members, clean, contract, token)
+            step("labels", 0, len(lookups))
+            for n, a in enumerate(lookups, start=1):
+                info = await self._tronscan.account(a)
+                if info is not None:
+                    infos[a] = info
+                step("labels", n, len(lookups))
+        labels = _TaggedLabels(self._labels, chain, {a: i.tag for a, i in infos.items() if i.tag})
+
         # --- link analyses --------------------------------------------------------
         snapshot = _Snapshot(self._wallets, histories)
-        analyzer = LinkAnalyzer(snapshot, self._labels, self._hub_threshold, sanctions=self._sanctions)
+        analyzer = LinkAnalyzer(snapshot, labels, self._hub_threshold, sanctions=self._sanctions)
         step("links", 0, 2)
         links_all = await analyzer.analyze(chain, members, LinkParams(token=token))
         step("links", 1, 2)
@@ -388,7 +414,7 @@ class Investigator:
         for a in members:
             i = index[a] - 1
             s = by_address[a]
-            label = self._labels.get(chain, a)
+            label = labels.get(chain, a)
             times = [t.timestamp for t in clean[a]]
             partners = {j for j in range(len(members)) if j != i and (matrix[i][j] or matrix[j][i])}
             rows.append(
@@ -425,14 +451,20 @@ class Investigator:
         profiles = []
         for n, a in enumerate(focus, start=1):
             profiles.append(
-                await self._profile(chain, a, index, histories[a], clean[a], token, contract, by_address[a].usdt_frozen)
+                await self._profile(
+                    chain, a, index, histories[a], clean[a], token, contract, by_address[a].usdt_frozen, labels
+                )
             )
+            if a in infos:
+                profiles[-1].is_contract = infos[a].is_contract
             step("profiles", n, len(focus))
 
         # --- most connected other members ----------------------------------------------
         others = [r for r in ranking if not r.is_focus and r.total_with_members > 0][:MOST_CONNECTED]
         most_connected = [
-            await self._member_profile(chain, r, members, matrix, counts, inside, histories[r.address], contract, token)
+            await self._member_profile(
+                chain, r, members, matrix, counts, inside, histories[r.address], contract, token, labels
+            )
             for r in others
         ]
 
@@ -452,38 +484,16 @@ class Investigator:
         # --- values and labels ------------------------------------------------------------
         focus_history = {a: await self._records(chain, sorted(clean[a], key=lambda t: t.timestamp), index) for a in focus}
         mentioned = set(members)
-        ordered: list[str] = []  # outside addresses, most important first
         for p in profiles:
-            ordered.extend(s.address for s in p.top_senders + p.top_receivers)
+            mentioned.update(s.address for s in p.top_senders + p.top_receivers)
         for path in links_focus.paths + links_all.paths:
-            ordered.extend(path.via)
-        ordered.extend(s.address for s in links_focus.shared + links_all.shared)
-        for mp in most_connected:
-            ordered.extend(pf.address for pf in mp.partners)
-        mentioned.update(ordered)
-        labels, categories, sources = {}, {}, {}
+            mentioned.update(path.via)
+        mentioned.update(s.address for s in links_focus.shared + links_all.shared)
+        names, categories, sources = {}, {}, {}
         for a in mentioned:
-            label = self._labels.get(chain, a)
+            label = labels.get(chain, a)
             if label is not None:
-                labels[a], categories[a], sources[a] = label.name, label.category.value, label.source
-        if self._tronscan is not None and chain == Chain.TRON:
-            lookups = [a for a in dict.fromkeys(focus + ordered) if a not in labels][: MAX_TAG_LOOKUPS + len(focus)]
-            step("labels", 0, len(lookups))
-            infos: dict[str, AccountInfo] = {}
-            for n, a in enumerate(lookups, start=1):
-                info = await self._tronscan.account(a)
-                if info is not None:
-                    infos[a] = info
-                    if info.tag:
-                        labels[a], categories[a], sources[a] = info.tag, tag_category(info.tag), "tronscan"
-                step("labels", n, len(lookups))
-            for p in profiles:
-                if p.address in infos:
-                    p.is_contract = infos[p.address].is_contract
-        for p in profiles:
-            for party in p.top_senders + p.top_receivers:
-                if party.label is None and party.address in labels:
-                    party.label, party.category = labels[party.address], categories[party.address]
+                names[a], categories[a], sources[a] = label.name, label.category.value, label.source
 
         toman = await self._values.toman_now()
         if toman.rate is None:
@@ -505,7 +515,7 @@ class Investigator:
             most_connected=most_connected,
             links_focus=links_focus,
             links_all=links_all,
-            labels=labels,
+            labels=names,
             categories=categories,
             label_sources=sources,
             toman=toman,
@@ -546,8 +556,43 @@ class Investigator:
             for t, v in zip(transfers, values)
         ]
 
+    def _tag_candidates(
+        self,
+        chain: Chain,
+        focus: list[str],
+        members: list[str],
+        clean: dict[str, list[Transfer]],
+        contract: str | None,
+        token: str,
+    ) -> list[str]:
+        """Addresses worth a name-tag lookup: the members, the focus wallets' main
+        counterparties, and outside wallets that dealt with several members."""
+        member_set = set(members)
+        touched: dict[str, set[str]] = defaultdict(set)
+        volume: dict[str, Decimal] = defaultdict(Decimal)
+        per_focus: dict[str, dict[str, Decimal]] = {a: defaultdict(Decimal) for a in focus}
+        for a in members:
+            for t in clean[a]:
+                if not _is_token(t, contract, token):
+                    continue
+                other = t.counterparty_for(a)
+                if other in member_set:
+                    continue
+                touched[other].add(a)
+                volume[other] += t.amount
+                if a in per_focus:
+                    per_focus[a][other] += t.amount
+        order = list(members)
+        for a in focus:
+            order.extend(sorted(per_focus[a], key=per_focus[a].get, reverse=True)[: 2 * TOP_PARTIES])
+        shared = [o for o, ms in touched.items() if len(ms) >= 2]
+        order.extend(sorted(shared, key=volume.get, reverse=True))
+        order = [a for a in dict.fromkeys(order) if self._labels.get(chain, a) is None]
+        return order[:MAX_TAG_LOOKUPS]
+
+    @staticmethod
     def _parties(
-        self, chain: Chain, address: str, transfers: list[Transfer], index: dict[str, int], incoming: bool
+        labels, chain: Chain, address: str, transfers: list[Transfer], index: dict[str, int], incoming: bool
     ) -> list[PartyStat]:
         grouped: dict[str, list[Transfer]] = defaultdict(list)
         for t in transfers:
@@ -557,7 +602,7 @@ class Investigator:
                 grouped[t.to_address].append(t)
         out = []
         for other, ts in grouped.items():
-            label = self._labels.get(chain, other)
+            label = labels.get(chain, other)
             out.append(
                 PartyStat(
                     address=other,
@@ -626,14 +671,15 @@ class Investigator:
         token: str,
         contract: str | None,
         usdt_frozen: bool | None,
+        labels,
     ) -> FocusProfile:
         transfers, truncated = history
         of_token = [t for t in clean if _is_token(t, contract, token)]
-        findings = analyze_transfers(chain, address, transfers, self._labels, truncated)
+        findings = analyze_transfers(chain, address, transfers, labels, truncated)
         findings.sort(key=lambda f: f.points, reverse=True)
         score = min(100, sum(f.points for f in findings))
         times = [t.timestamp for t in clean]
-        label = self._labels.get(chain, address)
+        label = labels.get(chain, address)
         largest = sorted(of_token, key=lambda t: t.amount, reverse=True)[:LARGEST]
         return FocusProfile(
             index=index[address],
@@ -652,8 +698,8 @@ class Investigator:
             findings=findings,
             stats=wallet_stats(address, transfers),
             usdt_frozen=usdt_frozen,
-            top_senders=self._parties(chain, address, of_token, index, incoming=True),
-            top_receivers=self._parties(chain, address, of_token, index, incoming=False),
+            top_senders=self._parties(labels, chain, address, of_token, index, incoming=True),
+            top_receivers=self._parties(labels, chain, address, of_token, index, incoming=False),
             largest=await self._records(chain, largest, index),
             monthly={
                 token: monthly_series(address, clean, contract or token),
@@ -672,6 +718,7 @@ class Investigator:
         history: tuple[list[Transfer], bool],
         contract: str | None,
         token: str,
+        labels,
     ) -> MemberProfile:
         transfers, truncated = history
         a, i = row.address, row.index - 1
@@ -698,7 +745,7 @@ class Investigator:
                 )
             )
         partners.sort(key=lambda p: p.sent + p.received, reverse=True)
-        findings = analyze_transfers(chain, a, transfers, self._labels, truncated)
+        findings = analyze_transfers(chain, a, transfers, labels, truncated)
         findings.sort(key=lambda f: f.points, reverse=True)
         score = min(100, sum(f.points for f in findings))
         balances = await self._balances(chain, a)

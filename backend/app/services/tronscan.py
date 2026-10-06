@@ -67,6 +67,7 @@ EXCHANGE_WORDS = (
     "binance", "okx", "okex", "huobi", "htx", "kucoin", "bybit", "gate", "mexc", "bitget", "kraken", "coinbase",
     "poloniex", "bitfinex", "bitmart", "bingx", "whitebit", "exchange", "nobitex", "wallex", "bitpin", "ramzinex",
     "tabdeal", "exir", "coinex", "lbank", "bitstamp", "crypto.com", "upbit", "bithumb", "hot", "deposit",
+    "mxc", "bitrue", "hotbit", "probit", "pionex", "okcoin", "ftx", "phemex", "xt.com", "digifinex", "bitkub",
 )  # fmt: skip
 
 
